@@ -1,0 +1,33 @@
+{
+  "id" : "c293498c-ed25-4fa6-b2da-a3cc7ed0bd51",
+  "type" : "DERBY",
+  "name" : "default",
+  "modelVersion" : "6.0",
+  "lastUpdatedTime" : 1483329093500,
+  "createdTime" : 1483329093500,
+  "exchanges" : [ {
+    "id" : "7e428f28-c5ec-4471-9e88-550e3d85eef3",
+    "name" : "amq.direct",
+    "type" : "direct",
+    "lastUpdatedTime" : 1483329093500,
+    "createdTime" : 1483329093500
+  }, {
+    "id" : "3c449024-76e4-4ab7-9698-75e1adb1012f",
+    "name" : "amq.fanout",
+    "type" : "fanout",
+    "lastUpdatedTime" : 1483329093500,
+    "createdTime" : 1483329093500
+  }, {
+    "id" : "3a70e921-1565-4549-8169-772209c15559",
+    "name" : "amq.match",
+    "type" : "headers",
+    "lastUpdatedTime" : 1483329093500,
+    "createdTime" : 1483329093500
+  }, {
+    "id" : "e520c8f7-4f4b-4080-a487-010c651a52b2",
+    "name" : "amq.topic",
+    "type" : "topic",
+    "lastUpdatedTime" : 1483329093500,
+    "createdTime" : 1483329093500
+  } ]
+}
