@@ -15,11 +15,10 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-stream" % akkaVersion,
   "com.typesafe.akka" %% "akka-http" % "10.0.1",
   "org.jsoup" % "jsoup" % "1.10.1",
-  "com.github.javaparser" % "javaparser-core" % "2.5.1",
   "org.apache.qpid" % "qpid-broker" % "6.1.1",
   "com.lightbend.akka" %% "akka-stream-alpakka-amqp" % "0.4",
-  "de.jflex" % "jflex" % "1.6.1",
-  "com.cebglobal" % "xpresso" % "0.9.0"
+  "com.cebglobal" % "xpresso" % "0.9.0",
+  "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
 
 
