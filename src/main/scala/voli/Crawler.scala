@@ -1,8 +1,5 @@
 package voli
 
-import java.io._
-import java.nio.file.Paths
-
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -14,7 +11,6 @@ import akka.stream.alpakka.amqp.scaladsl.{AmqpSink, AmqpSource}
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, RunnableGraph, Sink, Source}
 import akka.util.ByteString
 import com.google.common.io.Files
-import com.wantedtech.common.xpresso.x
 import org.apache.qpid.server.{Broker, BrokerOptions}
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -26,7 +22,7 @@ import scala.util.Success
 
 object Crawler {
 
-
+  private val indexer = new Indexer()
   implicit val system = ActorSystem("Crawler")
   implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
   val settings = ActorMaterializerSettings(system)
@@ -65,12 +61,7 @@ object Crawler {
     broker.startup(brokerOptions)
   }
 
-
   private var cache: Set[String] = Set()
-  private var dictionary: Map[String, (Int, Set[String])] = Map()
-  private var block = 0
-  private val indexDir = "blocks"
-  private val sep = ";"
 
   def notVisited(url: String): Boolean = !cache(url)
 
@@ -78,64 +69,6 @@ object Crawler {
     cache += url
     url
   }
-
-  def hitMemoryLimit(obj: Any): Boolean = {
-    val baos = new ByteArrayOutputStream()
-    val oos = new ObjectOutputStream(baos)
-    oos.writeObject(obj)
-    baos.toByteArray.length > 5000000
-  }
-
-  def index0(document: Document): Unit = {
-    val text = document.text()
-    val index = x.String.EN.tokenize(text).asScala.toList
-      .flatMap(_.getWords.toArrayList.asScala)
-      .groupBy(token => token)
-      .map { case (term, terms) => term -> (terms.size, Set(document.location())) }
-
-    val merged = dictionary.toSeq ++ index.toSeq
-    val grouped  = merged.groupBy(_._1)
-    val emptyListing = (0, Set.empty[String])
-    dictionary = grouped.mapValues(_.map(_._2).foldLeft(emptyListing){ case ((lFreq, lDocs), (rFreq, rDocs)) => (lFreq + rFreq, lDocs ++ rDocs) })
-    if (hitMemoryLimit(dictionary.toList)) {
-      block += 1
-      val writer = new PrintWriter(Paths.get(s"$indexDir/block$block.txt").toFile)
-
-      dictionary.toSeq.sortBy(_._1).foreach({
-        case (term, (freq, documents)) =>
-          writer.println(s"$term $sep $freq $sep ${documents.mkString(",")}")
-      })
-
-      writer.close()
-      dictionary = Map()
-    }
-  }
-
-  def mergeBlocks(): Unit = {
-    val writer = new PrintWriter(Paths.get(s"$indexDir/index.txt").toFile)
-
-    val dir = new File(indexDir)
-    val filter: FilenameFilter = (_, name: String) => name.contains("block")
-    if (dir.exists && dir.isDirectory) {
-      dir.listFiles(filter).grouped(2).foreach { case Array(f1, f2) =>
-        val line1 = io.Source.fromFile(f1).bufferedReader().readLine()
-        val line2 = io.Source.fromFile(f2).bufferedReader().readLine()
-        line1.split(sep)
-        line2.split(sep)
-      }
-    }
-  }
-
-  def merge(line1: String, line2: String)(implicit writer: PrintWriter): Unit = (line1, line2) match {
-    case (null, l2) => writer.println(l2)
-    case (l1, null) => writer.println(l1)
-    case (l1, l2) =>
-      val (term1, freq1, docs1) = l1.split(sep)
-      val (term2, freq2, docs2) = l2.split(sep)
-      if (term1.eq(term2)) writer.println(s"$term1 $sep ${freq1 + freq2} $sep ${docs1 ++ docs2}")
-  }
-
-
 
   def main(args: Array[String]): Unit = {
     startBroker()
@@ -157,11 +90,13 @@ object Crawler {
       val download = Flow[String]
         .map(url => (HttpRequest(method = HttpMethods.GET, Uri(url)), url) )
         .via(pool)
-        .mapAsyncUnordered(8){ case (Success(response: HttpResponse), url) => parse(response, url)}
+        .mapAsyncUnordered(8){
+          case (Success(response: HttpResponse), url) => parse(response, url)
+        }
       val filterSave = Flow[String].filter(notVisited).map(saveVisited).log(":filter")
       val extractLinks = Flow[Document].mapConcat(document => getUrls(document))
       val index = Flow[Document]
-        .to(Sink.foreach[Document](document => index0(document)))
+        .to(Sink.foreach[Document](document => indexer.index(document)))
 
       val bcast = b.add(Broadcast[Document](2))
 

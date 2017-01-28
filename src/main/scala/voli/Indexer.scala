@@ -1,0 +1,130 @@
+package voli
+
+import java.io._
+import java.nio.file
+import java.nio.file.Paths
+
+import com.wantedtech.common.xpresso.x
+import org.jsoup.nodes.Document
+
+import scala.collection.JavaConverters._
+import scala.collection.immutable.{::, Set}
+import scala.collection.mutable
+
+class Indexer(indexDir: String = "blocks", sep: String = ";") {
+  type Term = String
+  type Postings = String
+  type Frequency = Int
+  type Index = Map[Term, (Frequency, Set[Postings])]
+
+  object Line {
+    def apply(line: String): Line = {
+      val term::freq::docs::_ = line.split(sep).toList
+      Line(term, freq.toInt, docs)
+    }
+  }
+
+  case class Line(term: Term, freq: Frequency, docs: Postings) {
+    def combine(other: Line): Line = {
+      assert(other.term == term)
+      Line(term, other.freq + freq, s"$docs,${other.docs}")
+    }
+
+    override def toString: String = s"$term$sep$freq$sep$docs"
+  }
+
+
+  private var dictionary: Index = Map()
+  private var blockNo = 0
+
+  def mergeBlocks(idxDir: String): Unit = {
+    val writer = file.Files.newBufferedWriter(Paths.get(s"$idxDir/index.txt"))
+
+    val dir = new File(idxDir)
+    val filter: FilenameFilter = (_, name: String) => name.contains("block")
+
+    if (dir.exists && dir.isDirectory) {
+      val readers: Array[(Line, BufferedReader)] = dir.listFiles(filter)
+        .map(file => {
+          val reader = io.Source.fromFile(file).bufferedReader()
+          (Line(reader.readLine()), reader)
+        })
+
+      def orderingFn(item: (Line, BufferedReader)) = item match {
+        case (line, _) => line.term
+      }
+      val ordering: Ordering[(Line, BufferedReader)] = Ordering.by(orderingFn).reverse
+      val queue = mutable.PriorityQueue[(Line, BufferedReader)](readers:_*)(ordering)
+
+      while(queue.nonEmpty) {
+        val (line, reader) = queue.dequeue()
+        val (linesToMerge, _) = queue.filter(_._1.term == line.term).unzip
+        val merged = linesToMerge.foldLeft(line)(_.combine(_))
+
+        (1 to linesToMerge.size).foreach { _ =>
+          val (_, r) = queue.dequeue()
+          val line0 = r.readLine()
+          if (line0 != null) queue.enqueue((Line(line0), r))
+        }
+
+        val nextLine = reader.readLine()
+        if (nextLine != null) queue.enqueue((Line(nextLine), reader))
+
+        writer.write(merged.toString)
+        writer.newLine()
+      }
+      writer.close()
+    }
+  }
+
+  def documentIndex(document: Document): Index = {
+    val text = document.text()
+
+    val tokens = for {
+      sentence <- x.String.EN.tokenize(text).asScala
+      word <- sentence.getWords.toArrayList.asScala
+    } yield word.toLowerCase
+
+    tokens.groupBy(token => token)
+      .map { case (term, terms) => term -> (terms.size, Set(document.location())) }
+  }
+
+  def mergeIndices(i1: Index, i2: Index): Index = {
+    val combined = i1.toSeq ++ i2.toSeq
+    val grouped: Map[Term, Seq[(Term, (Frequency, Set[String]))]] = combined.groupBy(_._1)
+    val emptyListing = (0, Set.empty[String])
+    grouped.mapValues(
+      _.map(_._2).foldLeft(emptyListing) {
+        case ((lFreq, lDocs), (rFreq, rDocs)) => (lFreq + rFreq, lDocs ++ rDocs)
+      })
+  }
+
+  def index(document: Document): Unit = {
+    val index = documentIndex(document)
+    dictionary = mergeIndices(dictionary, index)
+
+    if (hitMemoryLimit(dictionary.toList)) {
+      blockNo += 1
+      val blockFile = Paths.get(s"$indexDir/block$blockNo.txt").toFile
+      if (!blockFile.getParentFile.exists()) blockFile.getParentFile.mkdirs()
+      val writer = new PrintWriter(blockFile)
+
+      dictionary.toSeq.sortBy(_._1).foreach({
+        case (term, (freq, documents)) =>
+          val line = s"$term$sep$freq$sep${documents.mkString(",")}"
+          writer.println(line)
+      })
+
+      writer.close()
+      dictionary = Map()
+    }
+  }
+
+  def hitMemoryLimit(obj: Any): Boolean = {
+    val baos = new ByteArrayOutputStream()
+    val oos = new ObjectOutputStream(baos)
+    oos.writeObject(obj)
+    baos.toByteArray.length > 100000
+  }
+}
+
