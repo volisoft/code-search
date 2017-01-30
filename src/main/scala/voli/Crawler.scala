@@ -22,7 +22,7 @@ import scala.util.Success
 
 object Crawler {
 
-  private val indexer = new Indexer()
+  private val indexer = new Indexer(100000)
   implicit val system = ActorSystem("Crawler")
   implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
   val settings = ActorMaterializerSettings(system)
