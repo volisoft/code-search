@@ -2,7 +2,7 @@ package voli
 
 import java.io._
 import java.nio.file
-import java.nio.file.Paths
+import java.nio.file.{Files, Paths}
 
 import com.wantedtech.common.xpresso.x
 import org.jsoup.nodes.Document
@@ -10,32 +10,26 @@ import org.jsoup.nodes.Document
 import scala.collection.JavaConverters._
 import scala.collection.immutable.{::, Set}
 import scala.collection.mutable
+import scala.util.Properties
 
-class Indexer(indexDir: String = "blocks", sep: String = ";") {
+class Indexer(memoryCap: Long, indexDir: String = "blocks", sep: String = ";") {
   type Term = String
   type Postings = String
   type Frequency = Int
   type Index = Map[Term, (Frequency, Set[Postings])]
 
-  object Line {
-    def apply(line: String): Line = {
-      val term::freq::docs::_ = line.split(sep).toList
-      Line(term, freq.toInt, docs)
-    }
-  }
+  private val readerOrdering = Ordering.by[(Line, BufferedReader), String]{case (line, _) => line.term}.reverse
 
-  case class Line(term: Term, freq: Frequency, docs: Postings) {
-    def combine(other: Line): Line = {
-      assert(other.term == term)
-      Line(term, other.freq + freq, s"$docs,${other.docs}")
-    }
-
-    override def toString: String = s"$term$sep$freq$sep$docs"
-  }
-
-
-  private var dictionary: Index = Map()
+  private var tempIndex: Index = Map()
   private var blockNo = 0
+  private[this] var _dictionary: Map[String, Long] = Map()
+
+  def dictionary: Map[Term, Long] = _dictionary
+
+  def sameTerm(p1: Option[(Line, Any)], p2: Option[(Line, Any)]): Boolean = (p1, p2) match {
+    case (Some((l1, _)), Some((l2, _))) => l1.term == l2.term
+    case _ => false
+  }
 
   def mergeBlocks(idxDir: String): Unit = {
     val writer = file.Files.newBufferedWriter(Paths.get(s"$idxDir/index.txt"))
@@ -50,11 +44,7 @@ class Indexer(indexDir: String = "blocks", sep: String = ";") {
           (Line(reader.readLine()), reader)
         })
 
-      def orderingFn(item: (Line, BufferedReader)) = item match {
-        case (line, _) => line.term
-      }
-      val ordering: Ordering[(Line, BufferedReader)] = Ordering.by(orderingFn).reverse
-      val queue = mutable.PriorityQueue[(Line, BufferedReader)](readers:_*)(ordering)
+      val queue = mutable.PriorityQueue[(Line, BufferedReader)](readers:_*)(readerOrdering)
 
       while(queue.nonEmpty) {
         val (line, reader) = queue.dequeue()
@@ -101,22 +91,27 @@ class Indexer(indexDir: String = "blocks", sep: String = ";") {
 
   def index(document: Document): Unit = {
     val index = documentIndex(document)
-    dictionary = mergeIndices(dictionary, index)
+    tempIndex = mergeIndices(tempIndex, index)
 
-    if (hitMemoryLimit(dictionary.toList)) {
+    if (hitMemoryLimit(tempIndex.toList)) {
       blockNo += 1
-      val blockFile = Paths.get(s"$indexDir/block$blockNo.txt").toFile
-      if (!blockFile.getParentFile.exists()) blockFile.getParentFile.mkdirs()
-      val writer = new PrintWriter(blockFile)
+      val blockFile = Paths.get(s"$indexDir/block$blockNo.txt")
+      if (Files.notExists(blockFile)) {
+        Files.createDirectories(blockFile.getParent)
+        Files.createFile(blockFile)
+      }
 
-      dictionary.toSeq.sortBy(_._1).foreach({
+      val out = new RandomAccessFile(blockFile.toFile, "rw")
+
+      tempIndex.toSeq.sortBy(_._1).foreach({
         case (term, (freq, documents)) =>
-          val line = s"$term$sep$freq$sep${documents.mkString(",")}"
-          writer.println(line)
+          val line = s"$term$sep$freq$sep${documents.mkString(",")}${Properties.lineSeparator}"
+          _dictionary += (term -> out.getFilePointer)
+          out.writeChars(line)
       })
 
-      writer.close()
-      dictionary = Map()
+      out.close()
+      tempIndex = Map()
     }
   }
 
@@ -124,7 +119,24 @@ class Indexer(indexDir: String = "blocks", sep: String = ";") {
     val baos = new ByteArrayOutputStream()
     val oos = new ObjectOutputStream(baos)
     oos.writeObject(obj)
-    baos.toByteArray.length > 100000
+    baos.toByteArray.length > memoryCap
+  }
+
+
+  object Line {
+    def apply(line: String): Line = {
+      val term::freq::docs::_ = line.split(sep).toList
+      Line(term, freq.toInt, docs)
+    }
+  }
+
+  case class Line(term: Term, freq: Frequency, docs: Postings) {
+    def combine(other: Line): Line = {
+      assert(other.term == term)
+      Line(term, other.freq + freq, s"$docs,${other.docs}")
+    }
+
+    override def toString: String = s"$term$sep$freq$sep$docs"
   }
 }
 
