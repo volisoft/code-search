@@ -16,8 +16,12 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-http" % "10.0.1",
   "org.jsoup" % "jsoup" % "1.10.1",
   "org.apache.qpid" % "qpid-broker" % "6.1.1",
-  "com.lightbend.akka" %% "akka-stream-alpakka-amqp" % "0.4",
+  "com.lightbend.akka" %% "akka-stream-alpakka-amqp" % "0.5",
   "com.cebglobal" % "xpresso" % "0.9.0",
+  "ro.pippo" % "pippo-core" % "1.1.0",
+  "ro.pippo" % "pippo-tomcat" % "1.1.0",
+  "ro.pippo" % "pippo-trimou" % "1.1.0",
+  "ro.pippo" % "pippo-gson" % "1.1.0",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
 
