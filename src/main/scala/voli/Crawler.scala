@@ -22,7 +22,8 @@ import scala.util.Success
 
 object Crawler {
 
-  val indexer = new Index(100000)
+  val index0 = new Index(config.memoryLimit)
+
   implicit val system = ActorSystem("Crawler")
   implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
   val settings = ActorMaterializerSettings(system)
@@ -48,7 +49,7 @@ object Crawler {
 
   val BROKER_PORT = "5672"
 
-  def startBroker: Unit = {
+  def startBroker(): Unit = {
     val broker = new Broker()
     val brokerOptions = new BrokerOptions()
 
@@ -61,11 +62,12 @@ object Crawler {
     broker.startup(brokerOptions)
   }
 
+  //todo make tread-safe
   private var cache: Set[String] = Set()
 
   def notVisited(url: String): Boolean = !cache(url)
 
-  def saveVisited(url: String): String = {
+  def updateCache(url: String): String = {
     cache += url
     url
   }
@@ -75,7 +77,7 @@ object Crawler {
   }
 
   def launch: NotUsed = {
-    startBroker
+    startBroker()
 
     val queueName = "amqp-conn-it-spec-simple-queue-" + System.currentTimeMillis()
     val queueDeclaration = QueueDeclaration(queueName)
@@ -98,15 +100,14 @@ object Crawler {
           .mapAsyncUnordered(8) {
             case (Success(response: HttpResponse), url) => parse(response, url)
           }
-        val filterSave = Flow[String].filter(notVisited).map(saveVisited).log(":filter")
-        val extractLinks = Flow[Document].mapConcat(document => getUrls(document))
-        val index = Flow[Document]
-          .to(Sink.foreach[Document](document => indexer.update(document)))
+        val filterAndCache = Flow[String].filter(notVisited).map(updateCache).log(":filter")
+        val extractLinks = Flow[Document].mapConcat(getUrls)
+        val index = Flow[Document].to(Sink.foreach[Document](index0.update))
 
         val bcast = b.add(Broadcast[Document](2))
 
-        in ~> filterSave ~> download ~> bcast ~> extractLinks ~> urlsSink0
-        bcast ~> index
+        in ~> filterAndCache ~> download ~> bcast ~> extractLinks ~> urlsSink0
+                                            bcast ~> index
 
         ClosedShape
     })
