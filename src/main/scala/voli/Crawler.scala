@@ -22,7 +22,7 @@ import scala.util.Success
 
 object Crawler {
 
-  private val indexer = new Indexer(100000)
+  val indexer = new Index(100000)
   implicit val system = ActorSystem("Crawler")
   implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
   val settings = ActorMaterializerSettings(system)
@@ -48,7 +48,7 @@ object Crawler {
 
   val BROKER_PORT = "5672"
 
-  def startBroker(): Unit = {
+  def startBroker: Unit = {
     val broker = new Broker()
     val brokerOptions = new BrokerOptions()
 
@@ -71,7 +71,11 @@ object Crawler {
   }
 
   def main(args: Array[String]): Unit = {
-    startBroker()
+    launch
+  }
+
+  def launch: NotUsed = {
+    startBroker
 
     val queueName = "amqp-conn-it-spec-simple-queue-" + System.currentTimeMillis()
     val queueDeclaration = QueueDeclaration(queueName)
@@ -81,29 +85,30 @@ object Crawler {
 
     val urlsSink = Flow[String].map(ByteString(_)).log(":out").to(out)
 
-    val g = RunnableGraph.fromGraph(GraphDSL.create(in, urlsSink)((_,_)){ implicit b => (in, urlsSink0) =>
-      import GraphDSL.Implicits._
+    val g = RunnableGraph.fromGraph(GraphDSL.create(in, urlsSink)((_, _)) { implicit b =>
+      (in, urlsSink0) =>
+        import GraphDSL.Implicits._
 
 
-      val pool = Http().superPool[String]()(materializer).log(":pool")
+        val pool = Http().superPool[String]()(materializer).log(":pool")
 
-      val download = Flow[String]
-        .map(url => (HttpRequest(method = HttpMethods.GET, Uri(url)), url) )
-        .via(pool)
-        .mapAsyncUnordered(8){
-          case (Success(response: HttpResponse), url) => parse(response, url)
-        }
-      val filterSave = Flow[String].filter(notVisited).map(saveVisited).log(":filter")
-      val extractLinks = Flow[Document].mapConcat(document => getUrls(document))
-      val index = Flow[Document]
-        .to(Sink.foreach[Document](document => indexer.index(document)))
+        val download = Flow[String]
+          .map(url => (HttpRequest(method = HttpMethods.GET, Uri(url)), url))
+          .via(pool)
+          .mapAsyncUnordered(8) {
+            case (Success(response: HttpResponse), url) => parse(response, url)
+          }
+        val filterSave = Flow[String].filter(notVisited).map(saveVisited).log(":filter")
+        val extractLinks = Flow[Document].mapConcat(document => getUrls(document))
+        val index = Flow[Document]
+          .to(Sink.foreach[Document](document => indexer.update(document)))
 
-      val bcast = b.add(Broadcast[Document](2))
+        val bcast = b.add(Broadcast[Document](2))
 
-      in ~> filterSave ~> download ~> bcast ~> extractLinks ~> urlsSink0
-                                      bcast ~> index
+        in ~> filterSave ~> download ~> bcast ~> extractLinks ~> urlsSink0
+        bcast ~> index
 
-      ClosedShape
+        ClosedShape
     })
 
     g.run()

@@ -12,7 +12,7 @@ import scala.collection.immutable.{::, Set}
 import scala.collection.mutable
 import scala.util.Properties
 
-class Indexer(memoryCap: Long, indexDir: String = "blocks", sep: String = ";") {
+class Index(memoryCap: Long, indexDir: String = "blocks", sep: String = ";") {
   type Term = String
   type Postings = String
   type Frequency = Int
@@ -89,7 +89,7 @@ class Indexer(memoryCap: Long, indexDir: String = "blocks", sep: String = ";") {
       })
   }
 
-  def index(document: Document): Unit = {
+  def update(document: Document): Unit = {
     val index = documentIndex(document)
     tempIndex = mergeIndices(tempIndex, index)
 

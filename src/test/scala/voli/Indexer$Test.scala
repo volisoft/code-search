@@ -1,13 +1,19 @@
 package voli
 
-import java.nio.file.Paths
-
+import org.jsoup.Jsoup
 import org.scalatest.FlatSpec
 
-class Indexer$Test extends FlatSpec {
+class Indexer$Test extends FlatSpec with TestIO{
+  private val docString = io.Source.fromURI(testDirPath.resolve("test.html").toUri).getLines().mkString("\n")
 
   "Merge blocks" should "combine and output to file in sorted order" in {
-    new Indexer().mergeBlocks(Paths.get(getClass.getClassLoader.getResource("blocks/test2").toURI).toAbsolutePath.toString)
+    new Index(0).mergeBlocks(testDirPath.resolve("blocks/test2").toString)
+  }
+
+  it should "create dictionary" in {
+    val idx = new Index(memoryCap = 0, indexDir = s"$testDirStringPath/out/indexTest1")
+    idx.update(Jsoup.parse(docString))
+    idx.dictionary
   }
 
 
