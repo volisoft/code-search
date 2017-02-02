@@ -1,4 +1,4 @@
-package voli
+package voli.index
 
 import java.io._
 import java.nio.file
@@ -8,14 +8,11 @@ import com.wantedtech.common.xpresso.x
 import org.jsoup.nodes.Document
 
 import scala.collection.JavaConverters._
-import scala.collection.immutable.{::, Set}
+import scala.collection.immutable.Set
 import scala.collection.mutable
 import scala.util.Properties
 
-class Index(memoryCap: Long, indexDir: String = "blocks", sep: String = ";") {
-  type Term = String
-  type Postings = String
-  type Frequency = Int
+class Index(indexDir: String = "blocks") {
   type Index = Map[Term, (Frequency, Set[Postings])]
 
   private val readerOrdering = Ordering.by[(Line, BufferedReader), String]{case (line, _) => line.term}.reverse
@@ -105,38 +102,14 @@ class Index(memoryCap: Long, indexDir: String = "blocks", sep: String = ";") {
 
       tempIndex.toSeq.sortBy(_._1).foreach({
         case (term, (freq, documents)) =>
-          val line = s"$term$sep$freq$sep${documents.mkString(",")}${Properties.lineSeparator}"
           _dictionary += (term -> out.getFilePointer)
+          val line = Line(term, freq, documents.mkString(",")).toString + Properties.lineSeparator
           out.writeChars(line)
       })
 
       out.close()
       tempIndex = Map()
     }
-  }
-
-  def hitMemoryLimit(obj: Any): Boolean = {
-    val baos = new ByteArrayOutputStream()
-    val oos = new ObjectOutputStream(baos)
-    oos.writeObject(obj)
-    baos.toByteArray.length > memoryCap
-  }
-
-
-  object Line {
-    def apply(line: String): Line = {
-      val term::freq::docs::_ = line.split(sep).toList
-      Line(term, freq.toInt, docs)
-    }
-  }
-
-  case class Line(term: Term, freq: Frequency, docs: Postings) {
-    def combine(other: Line): Line = {
-      assert(other.term == term)
-      Line(term, other.freq + freq, s"$docs,${other.docs}")
-    }
-
-    override def toString: String = s"$term$sep$freq$sep$docs"
   }
 }
 

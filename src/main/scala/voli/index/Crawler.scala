@@ -1,4 +1,4 @@
-package voli
+package voli.index
 
 import akka.NotUsed
 import akka.actor.ActorSystem
@@ -22,7 +22,7 @@ import scala.util.Success
 
 object Crawler {
 
-  val index0 = new Index(config.memoryLimit)
+  val index0 = new Index()
 
   implicit val system = ActorSystem("Crawler")
   implicit val dispatcher: ExecutionContextExecutor = system.dispatcher

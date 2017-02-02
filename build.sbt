@@ -22,6 +22,7 @@ libraryDependencies ++= Seq(
   "ro.pippo" % "pippo-tomcat" % "1.1.0",
   "ro.pippo" % "pippo-trimou" % "1.1.0",
   "ro.pippo" % "pippo-gson" % "1.1.0",
+  "org.aeonbits.owner" % "owner" % "1.0.9",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
 
