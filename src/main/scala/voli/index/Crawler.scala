@@ -6,6 +6,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest, HttpResponse, Uri}
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream._
+import akka.stream.actor.ActorSubscriberMessage
 import akka.stream.alpakka.amqp._
 import akka.stream.alpakka.amqp.scaladsl.{AmqpSink, AmqpSource}
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, RunnableGraph, Sink, Source}
@@ -17,6 +18,7 @@ import org.jsoup.nodes.Document
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.{List, Set}
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.Success
 
@@ -29,7 +31,7 @@ object Crawler {
   val settings = ActorMaterializerSettings(system)
   implicit val materializer: ActorMaterializer = ActorMaterializer(settings)(system)
 
-  val rootUrl = "http://citforum.ru/"
+  val rootUrl = "http://www.portsdb.com"
 
 
   def parse(response: HttpResponse, url: String): Future[Document] = {
@@ -82,7 +84,7 @@ object Crawler {
     val queueName = "amqp-conn-it-spec-simple-queue-" + System.currentTimeMillis()
     val queueDeclaration = QueueDeclaration(queueName)
 
-    val in = queueSource(queueName, queueDeclaration)
+    val in = queueSource(queueName, queueDeclaration).takeWithin(10.seconds)
     val out = queueSink(queueName, queueDeclaration)
 
     val urlsSink = Flow[String].map(ByteString(_)).log(":out").to(out)
@@ -104,10 +106,14 @@ object Crawler {
         val extractLinks = Flow[Document].mapConcat(getUrls)
         val index = Flow[Document].to(Sink.foreach[Document](index0.update))
 
-        val bcast = b.add(Broadcast[Document](2))
+        val bcast = b.add(Broadcast[Document](3))
 
         in ~> filterAndCache ~> download ~> bcast ~> extractLinks ~> urlsSink0
                                             bcast ~> index
+                                            bcast ~> Sink.onComplete(_ => {
+                                              index0.flush
+                                              index0.mergeBlocks(systemConfig.indexDir.toString)
+                                            })
 
         ClosedShape
     })

@@ -1,6 +1,7 @@
 package voli.index
 
 import java.io._
+import java.nio.charset.StandardCharsets
 import java.nio.file
 import java.nio.file.{Files, Paths}
 
@@ -55,7 +56,7 @@ class Index(indexDir: String = "blocks") {
         }
 
         val nextLine = reader.readLine()
-        if (nextLine != null) queue.enqueue((Line(nextLine), reader))
+        if (nextLine != null && nextLine.trim.nonEmpty) queue.enqueue((Line(nextLine), reader))
 
         writer.write(merged.toString)
         writer.newLine()
@@ -69,7 +70,7 @@ class Index(indexDir: String = "blocks") {
 
     val tokens = for {
       sentence <- x.String.EN.tokenize(text).asScala
-      word <- sentence.getWords.toArrayList.asScala
+      word <- sentence.getWords.toArrayList.asScala if word != ";"
     } yield word.toLowerCase
 
     tokens.groupBy(token => token)
@@ -90,25 +91,46 @@ class Index(indexDir: String = "blocks") {
     val index = documentIndex(document)
     tempIndex = mergeIndices(tempIndex, index)
 
-    if (hitMemoryLimit(tempIndex.toList)) {
-      blockNo += 1
-      val blockFile = Paths.get(s"$indexDir/block$blockNo.txt")
-      if (Files.notExists(blockFile)) {
-        Files.createDirectories(blockFile.getParent)
-        Files.createFile(blockFile)
-      }
+    if (hitMemoryLimit(tempIndex.toList)) flush
 
-      val out = new RandomAccessFile(blockFile.toFile, "rw")
+  }
 
-      tempIndex.toSeq.sortBy(_._1).foreach({
-        case (term, (freq, documents)) =>
-          _dictionary += (term -> out.getFilePointer)
-          val line = Line(term, freq, documents.mkString(",")).toString + Properties.lineSeparator
-          out.writeChars(line)
-      })
+  def flush: Unit = {
+    blockNo += 1
+    val blockFile = Paths.get(s"$indexDir/block$blockNo.txt")
+    if (Files.notExists(blockFile)) {
+      Files.createDirectories(blockFile.getParent)
+      Files.createFile(blockFile)
+    }
 
-      out.close()
-      tempIndex = Map()
+    val out = new RandomAccessFile(blockFile.toFile, "rw")
+
+    tempIndex.toSeq.sortBy(_._1).foreach({
+      case (term, (freq, documents)) =>
+        _dictionary += (term -> out.getFilePointer)
+        val line = Line(term, freq, documents.mkString(",")).toString + Properties.lineSeparator
+        out.write(StandardCharsets.UTF_8.encode(line).array())
+    })
+
+    val dict = dictionary.toSeq.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
+    Files.write(systemConfig.dictionaryFilePath, StandardCharsets.UTF_8.encode(dict).array())
+
+    out.close()
+    tempIndex = Map()
+  }
+
+  def search(term: Term): List[String]  = {
+    if (dictionary.isEmpty) {
+      _dictionary = Files.readAllLines(systemConfig.dictionaryFilePath, StandardCharsets.UTF_8)
+        .asScala.map(_.split(" "))
+        .map{ case Array(term_, pointer) => term_ -> pointer.trim.toLong}.toMap
+    }
+    if (!dictionary.contains(term)) List()
+    else {
+      val pointer: Long = dictionary(term)
+      val indexFile = new RandomAccessFile(systemConfig.indexFilePath.toFile, "r")
+      indexFile.seek(pointer)
+      Line(indexFile.readLine()).postings
     }
   }
 }

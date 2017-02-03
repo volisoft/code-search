@@ -7,8 +7,6 @@ import java.nio.file.{Path, Paths}
 import org.aeonbits.owner.Config.{ConverterClass, Key, Sources}
 import org.aeonbits.owner.{Config, ConfigFactory, Converter}
 
-import scala.collection.immutable.Set
-
 package object index {
   type Term = String
   type Postings = String
@@ -31,7 +29,7 @@ package object index {
       Line(term, other.freq + freq, s"$docs,${other.docs}")
     }
 
-    def postings: Set[String] = docs.split(",").toSet
+    def postings: List[String] = docs.split(",").toList
 
     override def toString: String = s"$term${systemConfig.columnSeparator}$freq${systemConfig.columnSeparator}$docs"
   }
@@ -42,7 +40,6 @@ package object index {
       Line(term, freq.toInt, docs)
     }
   }
-
 
   case class SystemConfig(properties: SystemProperties) {
     def indexFilePath: Path = this.indexDir.resolve(this.indexFileName)
