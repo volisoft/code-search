@@ -5,7 +5,7 @@
     <title>Title</title>
 
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
-    <link href="{{ publicAt 'css/main.css' }}" rel="stylesheet">
+    <link href="${ publicAt('css/main.css')}" rel="stylesheet">
 </head>
 <body>
 
@@ -21,8 +21,8 @@
             {{ error }}
         </div>
 
-        <ul id="results">
-            <li v-for="result in results" v-text="result.title"></li>
+        <ul id="results_">
+            <li v-for="result in results"><a v-bind:href="result">{{ result }}</a></li>
         </ul>
 
     </section>
@@ -30,6 +30,6 @@
 </section>
 <script src="https://unpkg.com/vue@2.1.10/dist/vue.js"></script>
 <script src="https://unpkg.com/vue-resource@1.1.0/dist/vue-resource.js"></script>
-<script src="{{ publicAt 'js/app.js'}}"></script>
+<script src="${ publicAt('js/app.js')}"></script>
 </body>
 </html>
