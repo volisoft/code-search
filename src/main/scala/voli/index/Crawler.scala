@@ -96,7 +96,7 @@ object Crawler {
 
         val pool = Http().superPool[String]()(materializer).log(":pool")
 
-        val auth = Authorization(BasicHttpCredentials("vadim.oliinyk@gmail.com", "Vadvad1985"))
+        val auth = Authorization(BasicHttpCredentials("****", "****"))
         val download = Flow[String]
           .map(url => ( HttpRequest(
             method = HttpMethods.GET,
