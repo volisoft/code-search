@@ -23,6 +23,7 @@ libraryDependencies ++= Seq(
   "ro.pippo" % "pippo-freemarker" % "1.1.0",
   "ro.pippo" % "pippo-gson" % "1.1.0",
   "org.aeonbits.owner" % "owner" % "1.0.9",
+  "com.rklaehn" %% "radixtree" % "0.5.0",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
 
