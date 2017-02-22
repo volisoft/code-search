@@ -3,10 +3,10 @@ package voli.index
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest, HttpResponse, Uri}
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream._
-import akka.stream.actor.ActorSubscriberMessage
 import akka.stream.alpakka.amqp._
 import akka.stream.alpakka.amqp.scaladsl.{AmqpSink, AmqpSource}
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, RunnableGraph, Sink, Source}
@@ -31,7 +31,7 @@ object Crawler {
   val settings = ActorMaterializerSettings(system)
   implicit val materializer: ActorMaterializer = ActorMaterializer(settings)(system)
 
-  val rootUrl = "http://www.portsdb.com"
+  val rootUrl = "change.me"
 
 
   def parse(response: HttpResponse, url: String): Future[Document] = {
@@ -84,7 +84,7 @@ object Crawler {
     val queueName = "amqp-conn-it-spec-simple-queue-" + System.currentTimeMillis()
     val queueDeclaration = QueueDeclaration(queueName)
 
-    val in = queueSource(queueName, queueDeclaration).takeWithin(10.seconds)
+    val in = queueSource(queueName, queueDeclaration).takeWithin(100.seconds)
     val out = queueSink(queueName, queueDeclaration)
 
     val urlsSink = Flow[String].map(ByteString(_)).log(":out").to(out)
@@ -96,8 +96,14 @@ object Crawler {
 
         val pool = Http().superPool[String]()(materializer).log(":pool")
 
+        val auth = Authorization(BasicHttpCredentials("vadim.oliinyk@gmail.com", "Vadvad1985"))
         val download = Flow[String]
-          .map(url => (HttpRequest(method = HttpMethods.GET, Uri(url)), url))
+          .map(url => ( HttpRequest(
+            method = HttpMethods.GET,
+            uri = Uri(url),
+            headers = List(auth)
+          )
+            , url))
           .via(pool)
           .mapAsyncUnordered(8) {
             case (Success(response: HttpResponse), url) => parse(response, url)
@@ -111,7 +117,7 @@ object Crawler {
         in ~> filterAndCache ~> download ~> bcast ~> extractLinks ~> urlsSink0
                                             bcast ~> index
                                             bcast ~> Sink.onComplete(_ => {
-                                              index0.flush
+                                              index0.flush()
                                               index0.mergeBlocks(systemConfig.indexDir.toString)
                                             })
 
