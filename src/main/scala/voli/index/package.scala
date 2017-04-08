@@ -25,8 +25,9 @@ package object index {
 
   case class Line(term: Term, freq: Frequency, docs: Postings) {
     def combine(other: Line): Line = {
-      assert(other.term == term)
-      Line(term, other.freq + freq, s"$docs,${other.docs}")
+      assert(other.term == term || other == EMPTY_LINE || this == EMPTY_LINE)
+      val term0 = if (other.term == "") term else other.term
+      Line(term0, other.freq + freq, s"$docs,${other.docs}")
     }
 
     def postings: List[String] = docs.split(",").toList
@@ -37,9 +38,11 @@ package object index {
   object Line {
     def apply(line: String): Line = {
       val term::freq::docs::_ = line.split(systemConfig.columnSeparator).toList
-      Line(term, freq.toInt, docs)
+      Line(term.trim, freq.toInt, docs)
     }
   }
+
+  val EMPTY_LINE = Line("", 0, "")
 
   case class SystemConfig(properties: SystemProperties) {
     def indexFilePath: Path = this.indexDir.resolve(this.indexFileName)

@@ -1,8 +1,7 @@
 package voli.index
 
-import java.io._
+import java.io.{BufferedReader, _}
 import java.nio.charset.StandardCharsets
-import java.nio.file
 import java.nio.file.{Files, Paths}
 
 import com.rklaehn.radixtree.RadixTree
@@ -17,7 +16,7 @@ import scala.util.Properties
 class Index(indexDir: String = "blocks") {
   type Index = Map[Term, (Frequency, Set[Postings])]
 
-  private val readerOrdering = Ordering.by[(Line, BufferedReader), String]{case (line, _) => line.term}.reverse
+  private val orderByTerm = Ordering.by[Pair, String](_.line0.term).reverse
 
   Files.createDirectories(systemConfig.indexDir)
 
@@ -38,39 +37,54 @@ class Index(indexDir: String = "blocks") {
     case _ => false
   }
 
+  case class Pair(line0: Line, file: BufferedReader)
+
+  def toPairs(files: Seq[BufferedReader]): Seq[Pair] = {
+    for {
+      f <- files
+      l <- Option(f.readLine())
+    } yield Pair(Line(l), f)
+  }
+
+  def dequeueWhile[T](queue: mutable.PriorityQueue[T], cond: (T) => Boolean): List[T] = {
+    def loop(acc: List[T]): List[T] = {
+      if(queue.nonEmpty && cond(queue.head)) loop(queue.dequeue::acc)
+      else acc
+    }
+    loop(List())
+  }
+
   def mergeBlocks(idxDir: String): Unit = {
-    val writer = file.Files.newBufferedWriter(Paths.get(s"$idxDir/index.txt"))
+    val out = new RandomAccessFile(Paths.get(s"$idxDir/index.txt").toFile, "rw")
 
     val dir = new File(idxDir)
     val filter: FilenameFilter = (_, name: String) => name.contains("block")
 
     if (dir.exists && dir.isDirectory) {
-      val readers: Array[(Line, BufferedReader)] = dir.listFiles(filter)
-        .map(file => {
-          val reader = io.Source.fromFile(file).bufferedReader()
-          (Line(reader.readLine()), reader)
+      val files = dir.listFiles(filter).map(io.Source.fromFile(_).bufferedReader())
+      val readers: Seq[Pair] = toPairs(files)
+
+      val queue = mutable.PriorityQueue[Pair](readers :_*)(orderByTerm)
+
+      val dictionary = Stream.continually(queue).takeWhile(_.nonEmpty)
+        .foldLeft(List[(String, Long)]())((dict, q) => q.headOption match {
+          case None => dict
+          case Some(head) =>
+            val sameTermListings = dequeueWhile[Pair](q, _.line0.term == head.line0.term)
+            val (lines, files) = sameTermListings.map(x => x.line0 -> x.file).unzip
+            val merged = lines.foldLeft(EMPTY_LINE)(_.combine(_))
+
+            queue.enqueue(toPairs(files): _*)
+            val pointer = merged.term -> out.getFilePointer
+            out.write((merged.toString + Properties.lineSeparator).getBytes(StandardCharsets.UTF_8))
+            pointer :: dict
         })
 
-      val queue = mutable.PriorityQueue[(Line, BufferedReader)](readers:_*)(readerOrdering)
+      out.close()
 
-      while(queue.nonEmpty) {
-        val (line, reader) = queue.dequeue()
-        val (linesToMerge, _) = queue.filter(_._1.term == line.term).unzip
-        val merged = linesToMerge.foldLeft(line)(_.combine(_))
-
-        (1 to linesToMerge.size).foreach { _ =>
-          val (_, r) = queue.dequeue()
-          val line0 = r.readLine()
-          if (line0 != null) queue.enqueue((Line(line0), r))
-        }
-
-        val nextLine = reader.readLine()
-        if (nextLine != null && nextLine.trim.nonEmpty) queue.enqueue((Line(nextLine), reader))
-
-        writer.write(merged.toString)
-        writer.newLine()
-      }
-      writer.close()
+      _dictionary = RadixTree(dictionary:_*).packed
+      val dict = dictionary.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
+      Files.write(systemConfig.dictionaryFilePath, dict.getBytes(StandardCharsets.UTF_8))
     }
   }
 
@@ -79,7 +93,7 @@ class Index(indexDir: String = "blocks") {
 
     val tokens = for {
       sentence <- x.String.EN.tokenize(text).asScala
-      word <- sentence.getWords.toArrayList.asScala if word != ";"
+      word <- sentence.getWords.toArrayList.asScala if word != ";" //TODO get list of words to ignore from properties
     } yield word.toLowerCase
 
     tokens.groupBy(token => token)
@@ -108,22 +122,16 @@ class Index(indexDir: String = "blocks") {
     blockNo += 1
     val blockFile = Paths.get(s"$indexDir/block$blockNo.txt")
     Files.createFile(blockFile)
-    val out = new RandomAccessFile(blockFile.toFile, "rw")
+    val out = Files.newBufferedWriter(blockFile, StandardCharsets.UTF_8)
 
-    val pointers = tempIndex.toSeq.map {
+    tempIndex.toSeq.sortBy{ case (term, (_, _)) => term}.foreach{
       case (term, (freq, documents)) =>
-        val pointer = term -> out.getFilePointer
         val line = Line(term, freq, documents.mkString(",")).toString + Properties.lineSeparator
-        out.write(StandardCharsets.UTF_8.encode(line).array())
-        pointer
+        out.write(line)
     }
-
-    val dict = pointers.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
-    Files.write(systemConfig.dictionaryFilePath, StandardCharsets.UTF_8.encode(dict).array())
 
     out.close()
     tempIndex = Map()
-    _dictionary = RadixTree(pointers:_*).packed
   }
 
   def search(term: Term): List[String]  = {
