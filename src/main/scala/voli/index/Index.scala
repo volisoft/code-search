@@ -6,6 +6,7 @@ import java.nio.file.{Files, Paths}
 
 import com.rklaehn.radixtree.RadixTree
 import com.wantedtech.common.xpresso.x
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 
 import scala.collection.JavaConverters._
@@ -88,16 +89,15 @@ class Index(indexDir: String = "blocks") {
     }
   }
 
-  def documentIndex(document: Document): Index = {
-    val text = document.text()
-
+  def documentIndex(document: String, location: String): Index = {
+    val text = if (document.contains("<html>")) Jsoup.parse(document).text() else document
     val tokens = for {
       sentence <- x.String.EN.tokenize(text).asScala
-      word <- sentence.getWords.toArrayList.asScala if word != ";" //TODO get list of words to ignore from properties
+      word <- sentence.getWords.toArrayList.asScala if !systemConfig.excludedTokens.contains(word)
     } yield word.toLowerCase
 
     tokens.groupBy(token => token)
-      .map { case (term, terms) => term -> (terms.size, Set(document.location())) }
+      .map { case (term, terms) => term -> (terms.size, Set(location)) }
   }
 
   def mergeIndices(i1: Index, i2: Index): Index = {
@@ -110,12 +110,13 @@ class Index(indexDir: String = "blocks") {
       })
   }
 
-  def update(document: Document): Unit = {
-    val index = documentIndex(document)
+  def update(document: Document): Unit = update(document.text(), document.location())
+
+  def update(document: String, url: String): Unit = {
+    val index = documentIndex(document, url)
     tempIndex = mergeIndices(tempIndex, index)
 
     if (hitMemoryLimit(tempIndex.toList)) flush()
-
   }
 
   def flush(): Unit = {

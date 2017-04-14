@@ -4,8 +4,10 @@ import java.io.{ByteArrayOutputStream, ObjectOutputStream}
 import java.lang.reflect.Method
 import java.nio.file.{Path, Paths}
 
-import org.aeonbits.owner.Config.{ConverterClass, Key, Sources}
+import org.aeonbits.owner.Config.{ConverterClass, Key, Separator, Sources}
 import org.aeonbits.owner.{Config, ConfigFactory, Converter}
+
+import scala.collection.JavaConverters._
 
 package object index {
   type Term = String
@@ -47,6 +49,7 @@ package object index {
   case class SystemConfig(properties: SystemProperties) {
     def indexFilePath: Path = this.indexDir.resolve(this.indexFileName)
     def dictionaryFilePath: Path = this.indexDir.resolve(this.dictionaryFileName)
+    def excludedTokens: List[String] = (systemConfig.javaReservedWords.asScala ++ systemConfig.specialChars.asScala).toList
   }
 
   object SystemConfig {
@@ -69,6 +72,14 @@ package object index {
 
     @Key("index.column-separator")
     def columnSeparator: String
+
+    @Separator(",")
+    @Key("index.exclude.java-reserved")
+    def javaReservedWords: java.util.List[String]
+
+    @Separator(",")
+    @Key("index.exclude.special")
+    def specialChars: java.util.List[String]
   }
 
   class PathConverter extends Converter[Path] {

@@ -4,7 +4,7 @@ version := "1.0"
 
 scalaVersion := "2.12.1"
 
-val akkaVersion = "2.4.16"
+val akkaVersion = "2.5.0"
 
 resolvers += Resolver.bintrayRepo("cakesolutions", "maven")
 
@@ -13,10 +13,10 @@ resolvers += Resolver.bintrayRepo("cakesolutions", "maven")
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-actor" % akkaVersion,
   "com.typesafe.akka" %% "akka-stream" % akkaVersion,
-  "com.typesafe.akka" %% "akka-http" % "10.0.1",
-  "org.jsoup" % "jsoup" % "1.10.1",
-  "org.apache.qpid" % "qpid-broker" % "6.1.1",
-  "com.lightbend.akka" %% "akka-stream-alpakka-amqp" % "0.5",
+  "com.typesafe.akka" %% "akka-http" % "10.0.5",
+  "org.jsoup" % "jsoup" % "1.10.2",
+  "org.apache.qpid" % "qpid-broker" % "6.1.2",
+  "com.lightbend.akka" %% "akka-stream-alpakka-amqp" % "0.7",
   "com.cebglobal" % "xpresso" % "0.9.0",
   "ro.pippo" % "pippo-core" % "1.1.0",
   "ro.pippo" % "pippo-tomcat" % "1.1.0",
@@ -24,6 +24,7 @@ libraryDependencies ++= Seq(
   "ro.pippo" % "pippo-gson" % "1.1.0",
   "org.aeonbits.owner" % "owner" % "1.0.9",
   "com.rklaehn" %% "radixtree" % "0.5.0",
+  "commons-io" % "commons-io" % "2.4",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
 
