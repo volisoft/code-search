@@ -83,7 +83,7 @@ object Crawler {
   def notVisited(url: String): Boolean = !cache(url)
 
   def acceptableFileType(url: String): Boolean = {
-    List("java", "html", "asp", "js", "properties", "xml", "jsp", "gif", "").contains(FilenameUtils.getExtension(url))
+    List("java", "html", "asp", "js", "properties", "xml", "jsp", "sql", "").contains(FilenameUtils.getExtension(url))
   }
 
   def updateCache(url: String): String = {
@@ -92,8 +92,8 @@ object Crawler {
   }
 
   def main(args: Array[String]): Unit = {
-    launch
-//    index0.mergeBlocks(systemConfig.indexDir.toString)
+//    launch
+    index0.mergeBlocks(systemConfig.indexDir.toString)
   }
 
   def launch: NotUsed = {
@@ -102,7 +102,7 @@ object Crawler {
     val queueName = "amqp-conn-it-spec-simple-queue-" + System.currentTimeMillis()
     val queueDeclaration = QueueDeclaration(queueName)
 
-    val in = queueSource(queueName, queueDeclaration).takeWithin(20.seconds).log(":in")
+    val in = queueSource(queueName, queueDeclaration)./*takeWithin(5.seconds).*/log(":in")
     val out = queueSink(queueName, queueDeclaration)
 
     val urlsSink = Flow[String].map(ByteString(_)).log(":out").to(out)
@@ -114,7 +114,7 @@ object Crawler {
 
         val pool = Http().superPool[String]()(materializer).log(":pool")
 
-        val auth = Authorization(BasicHttpCredentials("dmFkeW0ub2xpaW55azpIYXBweTEyMw=="))
+        val auth = Authorization(BasicHttpCredentials("*"))
 
         val download = Flow[String]
           .map(url => HttpRequest(method = HttpMethods.GET, uri = Uri(url), headers = List(auth)) -> url)
@@ -129,7 +129,6 @@ object Crawler {
           .log(":filter")
 
         val extractLinks = Flow[(String, String)]
-//          .filter{ case (_, url) => FilenameUtils.getExtension(url).contains("htm") }
           .mapConcat{ case (text, url) => getUrls(parse(text, url)) }
 
         val index = Flow[(String, String)]
