@@ -80,6 +80,13 @@ package object index {
     @Separator(",")
     @Key("index.exclude.special")
     def specialChars: java.util.List[String]
+
+    @Key("index.document_repo_credentials")
+    def credentials: String
+
+    @Separator(",")
+    @Key("index.root_urls")
+    def rootUrls: List[String]
   }
 
   class PathConverter extends Converter[Path] {

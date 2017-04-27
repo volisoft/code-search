@@ -39,9 +39,6 @@ object Crawler {
   private val settings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(settings)(system)
 
-  val rootUrl = "https://svn.wgu.edu/repos/prod/Projects/"
-
-
   def extractResponse(response: HttpResponse, url: String): Future[(String, String)] = {
     Unmarshal(response.entity.withoutSizeLimit())
       .to[String]
@@ -59,7 +56,7 @@ object Crawler {
     document
       .select("a[abs:href]").asScala
       .map(_.absUrl("href"))
-      .filter(_.contains(rootUrl)).toList
+      .filter(url => systemConfig.rootUrls.exists(url.contains(_))).toList
 
 
   val BROKER_PORT = "5672"
@@ -114,7 +111,7 @@ object Crawler {
 
         val pool = Http().superPool[String]()(materializer).log(":pool")
 
-        val auth = Authorization(BasicHttpCredentials("*"))
+        val auth = Authorization(BasicHttpCredentials(systemConfig.credentials))
 
         val download = Flow[String]
           .map(url => HttpRequest(method = HttpMethods.GET, uri = Uri(url), headers = List(auth)) -> url)
@@ -148,7 +145,7 @@ object Crawler {
 
     g.run()
 
-    Source.single(rootUrl).map(s => ByteString(s)).runWith(out)
+    Source(systemConfig.rootUrls).map(s => ByteString(s)).runWith(out)
   }
 
   private val connectionDetails: AmqpConnectionSettings = AmqpConnectionDetails("localhost", 5672, Some(AmqpCredentials("guest", "guest")))
