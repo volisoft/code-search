@@ -2,9 +2,8 @@ package voli.index
 
 import java.io.{BufferedReader, _}
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path, Paths}
 
-import com.rklaehn.radixtree.RadixTree
 import com.wantedtech.common.xpresso.x
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -21,17 +20,8 @@ class Index(indexDir: String = "blocks") {
 
   Files.createDirectories(systemConfig.indexDir)
 
-  private lazy val indexFile: RandomAccessFile = {
-    if (Files.notExists(systemConfig.indexFilePath)) Files.createFile(systemConfig.indexFilePath)
-    new RandomAccessFile(systemConfig.indexFilePath.toFile, "r")
-  }
-
   private var tempIndex: Index = Map()
   private var blockNo = 0
-  private[this] var _dictionary: RadixTree[String, Long] = RadixTree.empty
-
-
-  def dictionary: RadixTree[Term, Long] = _dictionary
 
   def sameTerm(p1: Option[(Line, Any)], p2: Option[(Line, Any)]): Boolean = (p1, p2) match {
     case (Some((l1, _)), Some((l2, _))) => l1.term == l2.term
@@ -55,38 +45,31 @@ class Index(indexDir: String = "blocks") {
     loop(List())
   }
 
-  def mergeBlocks(idxDir: String): Unit = {
-    val out = new RandomAccessFile(Paths.get(s"$idxDir/index.txt").toFile, "rw")
+  def mergeBlocks(blockFiles: Seq[File], indexFile: RandomAccessFile, dictionaryFile: Path): Unit = {
+    val files = blockFiles.map(io.Source.fromFile(_).bufferedReader())
+    val readers: Seq[Pair] = toPairs(files)
 
-    val dir = new File(idxDir)
-    val filter: FilenameFilter = (_, name: String) => name.contains("block")
+    val queue = mutable.PriorityQueue[Pair](readers :_*)(orderByTerm)
 
-    if (dir.exists && dir.isDirectory) {
-      val files = dir.listFiles(filter).map(io.Source.fromFile(_).bufferedReader())
-      val readers: Seq[Pair] = toPairs(files)
+    val dictionary = Stream
+      .continually(queue)
+      .takeWhile(_.nonEmpty)
+      .foldLeft(List[(String, Long)]())((dictionary0, queue0) => queue0.headOption match {
+        case None => dictionary0
+        case Some(head) =>
+          val sameTermListings = dequeueWhile[Pair](queue0, _.line0.term == head.line0.term)
+          val (lines, files) = sameTermListings.map(x => x.line0 -> x.file).unzip
+          queue.enqueue(toPairs(files): _*)
+          val merged = lines.foldLeft(EMPTY_LINE)(_.combine(_))
+          val pointer = merged.term -> indexFile.getFilePointer
+          indexFile.write((merged.toString + Properties.lineSeparator).getBytes(StandardCharsets.UTF_8))
+          pointer :: dictionary0
+      })
 
-      val queue = mutable.PriorityQueue[Pair](readers :_*)(orderByTerm)
+    indexFile.close()
 
-      val dictionary = Stream.continually(queue).takeWhile(_.nonEmpty)
-        .foldLeft(List[(String, Long)]())((dict, q) => q.headOption match {
-          case None => dict
-          case Some(head) =>
-            val sameTermListings = dequeueWhile[Pair](q, _.line0.term == head.line0.term)
-            val (lines, files) = sameTermListings.map(x => x.line0 -> x.file).unzip
-            val merged = lines.foldLeft(EMPTY_LINE)(_.combine(_))
-
-            queue.enqueue(toPairs(files): _*)
-            val pointer = merged.term -> out.getFilePointer
-            out.write((merged.toString + Properties.lineSeparator).getBytes(StandardCharsets.UTF_8))
-            pointer :: dict
-        })
-
-      out.close()
-
-      _dictionary = RadixTree(dictionary:_*).packed
-      val dict = dictionary.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
-      Files.write(systemConfig.dictionaryFilePath, dict.getBytes(StandardCharsets.UTF_8))
-    }
+    val dict = dictionary.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
+    Files.write(dictionaryFile, dict.getBytes(StandardCharsets.UTF_8))
   }
 
   def documentIndex(document: String, location: String): Index = {
@@ -133,22 +116,6 @@ class Index(indexDir: String = "blocks") {
 
     out.close()
     tempIndex = Map()
-  }
-
-  def search(term: Term): List[String]  = {
-    if (dictionary.isEmpty) {
-      val pointers = Files.readAllLines(systemConfig.dictionaryFilePath, StandardCharsets.UTF_8)
-        .asScala.map(_.split(" "))
-        .map{ case Array(term_, pointer) => term_ -> pointer.trim.toLong }
-      _dictionary = RadixTree(pointers:_*).packed
-    }
-    if (!dictionary.contains(term)) List()
-    else {
-      val pointer: Long = dictionary(term)
-      indexFile.seek(pointer)
-      val line = indexFile.readLine()
-      Line(line).postings
-    }
   }
 }
 

@@ -3,12 +3,11 @@ package voli.web
 import com.google.gson.Gson
 import ro.pippo.core.Application
 import ro.pippo.core.route.RouteContext
-import voli.index.Index
+import voli.index.IndexUtility
 
 import scala.collection.JavaConverters._
 
 class App extends  Application {
-  val index = new Index()
   val gson = new Gson()
 
   override def onInit(): Unit = {
@@ -17,7 +16,7 @@ class App extends  Application {
 
     GET("/", (ctx: RouteContext) => ctx.render("main.ftl"))
     GET("/api/search", (ctx: RouteContext) => {
-      val results = index.search(ctx.getRequest.getQueryParameter("q").toString)
+      val results = IndexUtility.search(ctx.getRequest.getQueryParameter("q").toString)
       ctx.json().send(gson.toJson(results.asJava))
     })
   }

@@ -123,7 +123,6 @@
 :;273;http://citforum.ru/database/clarion.shtml,http://citforum.ru/database/cache.shtml,http://citforum.ru/database/edu.shtml,http://citforum.ru/database/foxpro.shtml,http://citforum.ru/database/db2.shtml,http://citforum.ru/database/sql.shtml,http://citforum.ru/programming/vb.shtml,http://citforum.ru/internet/perl.shtml,http://citforum.ru/database/sqlserver.shtml,http://citforum.ru/database/digest/index.shtml,http://citforum.ru/database/informix.shtml,http://citforum.ru/programming/java.shtml,http://citforum.ru/database/classics/index.shtml,http://citforum.ru/database/articles/index.shtml,http://citforum.ru/seminars/index_db.shtml,http://citforum.ru/internet/php.shtml,http://citforum.ru/programming/asm.shtml,http://citforum.ru/database/interbase.shtml
 :1999;2;http://citforum.ru/database/classics/index.shtml,http://citforum.ru/database/digest/index.shtml
 :2003;1;http://citforum.ru/database/sql.shtml
-;;10;http://citforum.ru/database/interbase.shtml,http://citforum.ru/database/articles/index.shtml
 =;2;http://citforum.ru/internet/php.shtml,http://citforum.ru/internet/perl.shtml
 ?;17;http://citforum.ru/internet/php.shtml,http://citforum.ru/database/digest/index.shtml,http://citforum.ru/database/sqlserver.shtml,http://citforum.ru/database/articles/index.shtml
 @;1;http://citforum.ru/database/articles/index.shtml

@@ -1,13 +1,14 @@
 package voli
 
-import java.io.{ByteArrayOutputStream, ObjectOutputStream}
+import java.io.{ByteArrayOutputStream, File, FilenameFilter, ObjectOutputStream}
 import java.lang.reflect.Method
-import java.nio.file.{Path, Paths}
+import java.nio.file.{Files, Path, PathMatcher, Paths}
 
 import org.aeonbits.owner.Config.{ConverterClass, Key, Separator, Sources}
 import org.aeonbits.owner.{Config, ConfigFactory, Converter}
 
 import scala.collection.JavaConverters._
+import scala.compat.java8.StreamConverters._
 
 package object index {
   type Term = String
@@ -91,5 +92,17 @@ package object index {
 
   class PathConverter extends Converter[Path] {
     override def convert(method: Method, path: String): Path = Paths.get(path).toAbsolutePath
+  }
+
+  def blockFiles(): Seq[File] = {
+    val dir = systemConfig.indexDir
+    val filter = dir.getFileSystem.getPathMatcher("**/block*")
+    if (Files.exists(dir) && Files.isDirectory(dir)){
+      Files
+        .list(dir)
+        .filter(filter.matches(_))
+        .toScala
+    }
+    else throw new Error("Cannot find blocks")
   }
 }

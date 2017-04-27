@@ -1,5 +1,7 @@
 package voli.index
 
+import java.io.RandomAccessFile
+
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -90,7 +92,8 @@ object Crawler {
 
   def main(args: Array[String]): Unit = {
 //    launch
-    index0.mergeBlocks(systemConfig.indexDir.toString)
+    val indexFile = new RandomAccessFile(systemConfig.indexFilePath.toFile, "rw")
+    index0.mergeBlocks(blockFiles(), indexFile, systemConfig.dictionaryFilePath)
   }
 
   def launch: NotUsed = {
@@ -137,7 +140,9 @@ object Crawler {
                                             bcast ~> index
                                             bcast ~> Sink.onComplete(_ => {
                                               index0.flush()
-                                              index0.mergeBlocks(systemConfig.indexDir.toString)
+                                              index0.mergeBlocks(blockFiles(),
+                                                new RandomAccessFile(systemConfig.indexFilePath.toFile, "rw"),
+                                                systemConfig.dictionaryFilePath)
                                             })
 
         ClosedShape
