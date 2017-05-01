@@ -58,7 +58,7 @@ object Crawler {
     document
       .select("a[abs:href]").asScala
       .map(_.absUrl("href"))
-      .filter(url => systemConfig.rootUrls.exists(url.contains(_))).toList
+      .filter(url => systemConfig.rootUrls.asScala.exists(url.contains(_))).toList
 
 
   val BROKER_PORT = "5672"
@@ -77,12 +77,13 @@ object Crawler {
   }
 
   //todo make tread-safe
-  private var cache: Set[String] = Set()
+  var cache: Set[String] = Set()
 
   def notVisited(url: String): Boolean = !cache(url)
 
-  def acceptableFileType(url: String): Boolean = {
-    List("java", "html", "asp", "js", "properties", "xml", "jsp", "sql", "").contains(FilenameUtils.getExtension(url))
+  def acceptablePath(url: String): Boolean = {
+    !url.contains('#') &&
+      List("java", "html", "asp", "js", "properties", "xml", "jsp", "sql", "").contains(FilenameUtils.getExtension(url))
   }
 
   def updateCache(url: String): String = {
@@ -91,9 +92,9 @@ object Crawler {
   }
 
   def main(args: Array[String]): Unit = {
-//    launch
-    val indexFile = new RandomAccessFile(systemConfig.indexFilePath.toFile, "rw")
-    index0.mergeBlocks(blockFiles(), indexFile, systemConfig.dictionaryFilePath)
+    launch
+//    val indexFile = new RandomAccessFile(systemConfig.indexFilePath.toFile, "rw")
+//    index0.mergeBlocks(blockFiles(), indexFile, systemConfig.dictionaryFilePath)
   }
 
   def launch: NotUsed = {
@@ -124,7 +125,7 @@ object Crawler {
           }
 
         val filterAndCache = Flow[String]
-          .filter(url => notVisited(url) && acceptableFileType(url) )
+          .filter(url => notVisited(url) && acceptablePath(url) )
           .map(updateCache)
           .log(":filter")
 
@@ -150,14 +151,17 @@ object Crawler {
 
     g.run()
 
-    Source(systemConfig.rootUrls).map(s => ByteString(s)).runWith(out)
+    Source(systemConfig.rootUrls.asScala.toList).map(s => ByteString(s)).runWith(out)
   }
 
   private val connectionDetails: AmqpConnectionSettings = AmqpConnectionDetails("localhost", 5672, Some(AmqpCredentials("guest", "guest")))
 
-  private def queueSink(queueName: String, queueDeclaration: QueueDeclaration): Sink[ByteString, NotUsed] = {
-    AmqpSink.simple(AmqpSinkSettings(connectionDetails).withRoutingKey(queueName).withDeclarations(queueDeclaration))
-  }
+  private def queueSink(queueName: String, queueDeclaration: QueueDeclaration): Sink[ByteString, NotUsed] =
+    AmqpSink
+      .simple(AmqpSinkSettings(connectionDetails)
+      .withRoutingKey(queueName)
+      .withDeclarations(queueDeclaration))
+
 
   private def queueSource(queueName: String, queueDeclaration: QueueDeclaration): Source[String, NotUsed] = {
     val settings: AmqpSourceSettings = NamedQueueSourceSettings(connectionDetails, queueName).withDeclarations(queueDeclaration)

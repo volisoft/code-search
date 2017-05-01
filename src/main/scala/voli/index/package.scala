@@ -1,8 +1,8 @@
 package voli
 
-import java.io.{ByteArrayOutputStream, File, FilenameFilter, ObjectOutputStream}
+import java.io.{ByteArrayOutputStream, File, ObjectOutputStream}
 import java.lang.reflect.Method
-import java.nio.file.{Files, Path, PathMatcher, Paths}
+import java.nio.file.{Files, Path, Paths}
 
 import org.aeonbits.owner.Config.{ConverterClass, Key, Separator, Sources}
 import org.aeonbits.owner.{Config, ConfigFactory, Converter}
@@ -87,7 +87,7 @@ package object index {
 
     @Separator(",")
     @Key("index.root_urls")
-    def rootUrls: List[String]
+    def rootUrls: java.util.List[String]
   }
 
   class PathConverter extends Converter[Path] {
@@ -98,10 +98,10 @@ package object index {
     val dir = systemConfig.indexDir
     val filter = dir.getFileSystem.getPathMatcher("**/block*")
     if (Files.exists(dir) && Files.isDirectory(dir)){
-      Files
-        .list(dir)
+      Files.list(dir)
         .filter(filter.matches(_))
-        .toScala
+        .toScala[Seq]
+        .map(_.toFile())
     }
     else throw new Error("Cannot find blocks")
   }
