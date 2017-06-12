@@ -141,7 +141,7 @@ object Crawler {
                                             bcast ~> index
                                             bcast ~> Sink.onComplete(_ => {
                                               index0.flush()
-                                              index0.mergeBlocks(blockFiles(),
+                                              mergeBlocks(blockFiles(),
                                                 new RandomAccessFile(systemConfig.indexFilePath.toFile, "rw"),
                                                 systemConfig.dictionaryFilePath)
                                             })

@@ -4,7 +4,7 @@ version := "1.0"
 
 scalaVersion := "2.12.1"
 
-val akkaVersion = "2.5.0"
+val akkaVersion = "2.5.1"
 
 resolvers += Resolver.bintrayRepo("cakesolutions", "maven")
 
@@ -13,7 +13,7 @@ resolvers += Resolver.bintrayRepo("cakesolutions", "maven")
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-actor" % akkaVersion,
   "com.typesafe.akka" %% "akka-stream" % akkaVersion,
-  "com.typesafe.akka" %% "akka-http" % "10.0.5",
+  "com.typesafe.akka" %% "akka-http" % "10.0.6",
   "org.jsoup" % "jsoup" % "1.10.2",
   "org.apache.qpid" % "qpid-broker" % "6.1.2",
   "com.lightbend.akka" %% "akka-stream-alpakka-amqp" % "0.7",

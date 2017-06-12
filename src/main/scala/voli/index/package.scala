@@ -1,14 +1,19 @@
 package voli
 
-import java.io.{ByteArrayOutputStream, File, ObjectOutputStream}
+import java.io._
 import java.lang.reflect.Method
+import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
+import java.util.concurrent.TimeUnit
 
-import org.aeonbits.owner.Config.{ConverterClass, Key, Separator, Sources}
+import org.aeonbits.owner.Config._
 import org.aeonbits.owner.{Config, ConfigFactory, Converter}
+import voli.index.mergeBlocks
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 import scala.compat.java8.StreamConverters._
+import scala.util.Properties
 
 package object index {
   type Term = String
@@ -33,7 +38,7 @@ package object index {
       Line(term0, other.freq + freq, s"$docs,${other.docs}")
     }
 
-    def postings: List[String] = docs.split(",").toList
+    def postings: List[String] = docs.split(systemConfig.columnSeparator).toList
 
     override def toString: String = s"$term${systemConfig.columnSeparator}$freq${systemConfig.columnSeparator}$docs"
   }
@@ -57,6 +62,7 @@ package object index {
     implicit def delegateToProperties(config: SystemConfig): SystemProperties = config.properties
   }
 
+  @HotReload(value = 10L, unit = TimeUnit.SECONDS)
   @Sources(Array("file:/etc/index.properties", "classpath:index.properties"))
   trait SystemProperties extends Config {
     @Key("index.max-memory")
@@ -96,7 +102,7 @@ package object index {
 
   def blockFiles(): Seq[File] = {
     val dir = systemConfig.indexDir
-    val filter = dir.getFileSystem.getPathMatcher("**/block*")
+    val filter = dir.getFileSystem.getPathMatcher("glob:**/block*")
     if (Files.exists(dir) && Files.isDirectory(dir)){
       Files.list(dir)
         .filter(filter.matches(_))
@@ -104,5 +110,70 @@ package object index {
         .map(_.toFile())
     }
     else throw new Error("Cannot find blocks")
+  }
+
+  def dequeueWhile[T](queue: mutable.PriorityQueue[T], cond: (T) => Boolean): List[T] = {
+    def loop(acc: List[T]): List[T] = {
+      if(queue.nonEmpty && cond(queue.head)) loop(queue.dequeue::acc)
+      else acc
+    }
+    loop(List())
+  }
+
+  private val orderByTerm = Ordering.by[Pair, String](_.line0.term).reverse
+
+  case class Pair(line0: Line, file: BufferedReader)
+
+  def toPairs(files: Seq[BufferedReader]): Seq[Pair] = {
+    for {
+      f <- files
+      l <- Option(f.readLine())
+    } yield Pair(Line(l), f)
+  }
+
+  def mergeBlocks(blockFiles: Seq[File], indexFile: RandomAccessFile, dictionaryFile: Path): Unit = {
+    val files = blockFiles.map(io.Source.fromFile(_).bufferedReader())
+    val readers: Seq[Pair] = toPairs(files)
+
+    val queue = mutable.PriorityQueue[Pair](readers :_*)(orderByTerm)
+
+    val dictionary = Stream
+      .continually(queue)
+      .takeWhile(_.nonEmpty)
+      .foldLeft(List[(String, Long)]())((dictionary0, queue0) => queue0.headOption match {
+        case None => dictionary0
+        case Some(head) =>
+          val sameTermListings = dequeueWhile[Pair](queue0, _.line0.term == head.line0.term)
+          val (lines, files) = sameTermListings.map(x => x.line0 -> x.file).unzip
+          queue.enqueue(toPairs(files): _*)
+          val merged = lines.foldLeft(EMPTY_LINE)(_.combine(_))
+          val pointer = merged.term -> indexFile.getFilePointer
+          indexFile.write((merged.toString + Properties.lineSeparator).getBytes(StandardCharsets.UTF_8))
+          pointer :: dictionary0
+      })
+
+    indexFile.close()
+
+    val dict = dictionary.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
+    Files.write(dictionaryFile, dict.getBytes(StandardCharsets.UTF_8))
+  }
+}
+
+object test {
+  def main(args: Array[String]): Unit = {
+    val dir = Paths.get("/Users/user/workspace/wgu/delete/cvs-search/blocks")
+    val pathMatcher = dir.getFileSystem.getPathMatcher("glob:**/block*")
+
+    val b: Seq[File] = Files
+      .list(dir)
+      .filter(pathMatcher.matches(_))
+      .toScala[Seq]
+      .map(_.toFile)
+
+    val indexFile = new RandomAccessFile(Paths.get("/Users/user/workspace/wgu/delete/cvs-search/blocks/index.txt").toFile, "rw")
+
+    mergeBlocks(b,
+      indexFile,
+      Paths.get("/Users/user/workspace/wgu/delete/cvs-search/blocks/dict.txt"))
   }
 }

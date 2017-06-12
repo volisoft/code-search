@@ -1,22 +1,17 @@
 package voli.index
 
-import java.io.{BufferedReader, _}
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path, Paths}
+import java.nio.file.{Files, Paths}
 
 import com.wantedtech.common.xpresso.x
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.Set
-import scala.collection.mutable
 import scala.util.Properties
 
 class Index(indexDir: String = "blocks") {
   type Index = Map[Term, (Frequency, Set[Postings])]
-
-  private val orderByTerm = Ordering.by[Pair, String](_.line0.term).reverse
 
   Files.createDirectories(systemConfig.indexDir)
 
@@ -28,54 +23,10 @@ class Index(indexDir: String = "blocks") {
     case _ => false
   }
 
-  case class Pair(line0: Line, file: BufferedReader)
-
-  def toPairs(files: Seq[BufferedReader]): Seq[Pair] = {
-    for {
-      f <- files
-      l <- Option(f.readLine())
-    } yield Pair(Line(l), f)
-  }
-
-  def dequeueWhile[T](queue: mutable.PriorityQueue[T], cond: (T) => Boolean): List[T] = {
-    def loop(acc: List[T]): List[T] = {
-      if(queue.nonEmpty && cond(queue.head)) loop(queue.dequeue::acc)
-      else acc
-    }
-    loop(List())
-  }
-
-  def mergeBlocks(blockFiles: Seq[File], indexFile: RandomAccessFile, dictionaryFile: Path): Unit = {
-    val files = blockFiles.map(io.Source.fromFile(_).bufferedReader())
-    val readers: Seq[Pair] = toPairs(files)
-
-    val queue = mutable.PriorityQueue[Pair](readers :_*)(orderByTerm)
-
-    val dictionary = Stream
-      .continually(queue)
-      .takeWhile(_.nonEmpty)
-      .foldLeft(List[(String, Long)]())((dictionary0, queue0) => queue0.headOption match {
-        case None => dictionary0
-        case Some(head) =>
-          val sameTermListings = dequeueWhile[Pair](queue0, _.line0.term == head.line0.term)
-          val (lines, files) = sameTermListings.map(x => x.line0 -> x.file).unzip
-          queue.enqueue(toPairs(files): _*)
-          val merged = lines.foldLeft(EMPTY_LINE)(_.combine(_))
-          val pointer = merged.term -> indexFile.getFilePointer
-          indexFile.write((merged.toString + Properties.lineSeparator).getBytes(StandardCharsets.UTF_8))
-          pointer :: dictionary0
-      })
-
-    indexFile.close()
-
-    val dict = dictionary.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
-    Files.write(dictionaryFile, dict.getBytes(StandardCharsets.UTF_8))
-  }
-
   def documentIndex(document: String, location: String): Index = {
-    val text = if (document.contains("<html>")) Jsoup.parse(document).text() else document
+    val text = /*if (document.contains("<html>")) Jsoup.parse(document).text() else*/ document
     val tokens = for {
-      sentence <- x.String.EN.tokenize(text).asScala
+      sentence <- x.String.EN.tokenize(text).asScala //OR text.split("[\\p{Z}\\s]+")
       word <- sentence.getWords.toArrayList.asScala if !systemConfig.excludedTokens.contains(word)
     } yield word.toLowerCase
 
