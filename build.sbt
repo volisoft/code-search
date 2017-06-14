@@ -13,7 +13,7 @@ resolvers += Resolver.bintrayRepo("cakesolutions", "maven")
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-actor" % akkaVersion,
   "com.typesafe.akka" %% "akka-stream" % akkaVersion,
-  "com.typesafe.akka" %% "akka-http" % "10.0.6",
+  "com.typesafe.akka" %% "akka-http" % "10.0.7",
   "org.jsoup" % "jsoup" % "1.10.2",
   "org.apache.qpid" % "qpid-broker" % "6.1.2",
   "com.lightbend.akka" %% "akka-stream-alpakka-amqp" % "0.7",
@@ -25,6 +25,7 @@ libraryDependencies ++= Seq(
   "org.aeonbits.owner" % "owner" % "1.0.9",
   "com.rklaehn" %% "radixtree" % "0.5.0",
   "commons-io" % "commons-io" % "2.4",
+  "io.lemonlabs" %% "scala-uri" % "0.4.16",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test"
 )
 

@@ -14,6 +14,8 @@ import akka.stream.alpakka.amqp.scaladsl.{AmqpSink, AmqpSource}
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, RunnableGraph, Sink, Source}
 import akka.util.ByteString
 import com.google.common.io.Files
+import com.netaporter.uri
+import com.netaporter.uri.config.UriConfig
 import org.apache.commons.io.FilenameUtils
 import org.apache.qpid.server.{Broker, BrokerOptions}
 import org.jsoup.Jsoup
@@ -22,7 +24,6 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.{List, Set}
-import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.Success
 
@@ -98,6 +99,10 @@ object Crawler {
   }
 
   def launch: NotUsed = {
+    import com.netaporter.uri.dsl._
+    import com.netaporter.uri.encoding._
+    implicit val config = UriConfig(encoder = percentEncode)
+
     startBroker()
 
     val queueName = "amqp-conn-it-spec-simple-queue-" + System.currentTimeMillis()
@@ -118,7 +123,7 @@ object Crawler {
         val auth = Authorization(BasicHttpCredentials(systemConfig.credentials))
 
         val download = Flow[String]
-          .map(url => HttpRequest(method = HttpMethods.GET, uri = Uri(url), headers = List(auth)) -> url)
+          .map(url => HttpRequest(method = HttpMethods.GET, uri = Uri(url:uri.Uri), headers = List(auth)) -> url)
           .via(pool)
           .mapAsyncUnordered(8) {
             case (Success(response: HttpResponse), url) => extractResponse(response, url)
