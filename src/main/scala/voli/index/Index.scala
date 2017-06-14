@@ -26,7 +26,8 @@ class Index(indexDir: String = "blocks") {
   def documentIndex(document: String, location: String): Index = {
     val text = /*if (document.contains("<html>")) Jsoup.parse(document).text() else*/ document
     val tokens = for {
-      sentence <- x.String.EN.tokenize(text).asScala //OR text.split("[\\p{Z}\\s]+")
+      token<- text.split("[\\p{Z}\\s]+")
+      sentence <- x.String.EN.tokenize(token).asScala
       word <- sentence.getWords.toArrayList.asScala if !systemConfig.excludedTokens.contains(word)
     } yield word.toLowerCase
 
