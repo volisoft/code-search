@@ -6,6 +6,9 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.TimeUnit
 
+import akka.NotUsed
+import akka.stream.scaladsl.{Flow, Source}
+import kamon.Kamon
 import org.aeonbits.owner.Config._
 import org.aeonbits.owner.{Config, ConfigFactory, Converter}
 import voli.index.mergeBlocks
@@ -13,6 +16,7 @@ import voli.index.mergeBlocks
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.compat.java8.StreamConverters._
+import scala.concurrent.duration.{FiniteDuration, SECONDS, _}
 import scala.util.Properties
 
 package object index {
@@ -156,6 +160,27 @@ package object index {
 
     val dict = dictionary.map{case (term, pointer) => s"$term $pointer"}.mkString(Properties.lineSeparator)
     Files.write(dictionaryFile, dict.getBytes(StandardCharsets.UTF_8))
+  }
+
+  def flowRate[T](metric: T => Int = (_: T) => 1, outputDelay: FiniteDuration = 1 second): Flow[T, Double, NotUsed] =
+    Flow[T]
+      .conflateWithSeed(metric(_)){ case (acc, x) ⇒ acc + metric(x) }
+      .zip(Source.tick(outputDelay, outputDelay, NotUsed))
+      .map(_._1.toDouble / outputDelay.toUnit(SECONDS))
+
+//  def printFlowRate[T](name: String, metric: T => Int = (_: T) => 1,
+//                       outputDelay: FiniteDuration = 1 second): Flow[T, T, NotUsed] =
+//    Flow[T]
+//      .alsoTo(flowRate[T](metric, outputDelay)
+//        .to(Sink.foreach(r => logger.info(s"Rate($name): $r"))))
+
+  def meter[T](name: String): Flow[T, T, NotUsed] = {
+    val msgCounter = Kamon.metrics.counter(name)
+
+    Flow[T].map { x =>
+      msgCounter.increment()
+      x
+    }
   }
 }
 
