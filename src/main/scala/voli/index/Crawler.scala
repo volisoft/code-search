@@ -7,17 +7,17 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
 import akka.http.scaladsl.model.{HttpMethods, HttpRequest, HttpResponse, Uri}
+import akka.http.scaladsl.settings.ConnectionPoolSettings
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream._
 import akka.stream.alpakka.amqp._
 import akka.stream.alpakka.amqp.scaladsl.{AmqpSink, AmqpSource}
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, RunnableGraph, Sink, Source}
 import akka.util.ByteString
-import com.google.common.io.Files
+import com.github.benmanes.caffeine.cache.{Cache, Caffeine}
 import com.netaporter.uri
 import com.netaporter.uri.config.UriConfig
-import org.apache.commons.io.FilenameUtils
-import org.apache.qpid.server.{Broker, BrokerOptions}
+import kamon.Kamon
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.slf4j.LoggerFactory
@@ -42,6 +42,14 @@ object Crawler {
   private val settings = ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   implicit val materializer: ActorMaterializer = ActorMaterializer(settings)(system)
 
+  Kamon.start()
+//  val sourceRate = Agent(1)
+//  val sinkRate = Agent(1)
+  scala.sys.addShutdownHook {
+    Kamon.shutdown()
+    system.terminate()
+  }
+
   def extractResponse(response: HttpResponse, url: String): Future[(String, String)] = {
     Unmarshal(response.entity.withoutSizeLimit())
       .to[String]
@@ -62,33 +70,21 @@ object Crawler {
       .filter(url => systemConfig.rootUrls.asScala.exists(url.contains(_))).toList
 
 
-  val BROKER_PORT = "5672"
-
-  def startBroker(): Unit = {
-    val broker = new Broker()
-    val brokerOptions = new BrokerOptions()
-
-    val configFileName = "/qpid-config.json"
-
-    brokerOptions.setConfigProperty("broker.name", "embedded-broker")
-    brokerOptions.setConfigProperty("qpid.amqp_port", BROKER_PORT)
-    brokerOptions.setConfigProperty("qpid.work_dir", Files.createTempDir().getAbsolutePath)
-    brokerOptions.setInitialConfigurationLocation(getClass.getResource(configFileName).toString)
-    broker.startup(brokerOptions)
-  }
 
   //todo make tread-safe
-  var cache: Set[String] = Set()
+  var cache: Cache[String, String] = Caffeine.newBuilder()
+    .maximumSize(100000000)
+    .build[String, String]()
 
-  def notVisited(url: String): Boolean = !cache(url)
+  def notVisited(url: String): Boolean = cache.getIfPresent(url) == null
 
   def acceptablePath(url: String): Boolean = {
-    !url.contains('#') &&
-      List("java", "html", "asp", "js", "properties", "xml", "jsp", "sql", "").contains(FilenameUtils.getExtension(url))
+    !url.contains('#') /*&&
+      List("java", "html", "asp", "js", "properties", "xml", "jsp", "sql", "").contains(FilenameUtils.getExtension(url))*/
   }
 
   def updateCache(url: String): String = {
-    cache += url
+    cache.put(url, url)
     url
   }
 
@@ -103,42 +99,44 @@ object Crawler {
     import com.netaporter.uri.encoding._
     implicit val config = UriConfig(encoder = percentEncode)
 
-    startBroker()
-
     val queueName = "amqp-conn-it-spec-simple-queue-" + System.currentTimeMillis()
     val queueDeclaration = QueueDeclaration(queueName)
 
     val in = queueSource(queueName, queueDeclaration)./*takeWithin(5.seconds).*/log(":in")
+      .via(meter("source"))
     val out = queueSink(queueName, queueDeclaration)
 
-    val urlsSink = Flow[String].map(ByteString(_)).log(":out").to(out)
+    val urlsSink = Flow[String].map(ByteString(_)).log(":out").via(meter("sink")).to(out)
+
+    val connectionSettings = ConnectionPoolSettings(system)
+      .withMaxConnections(32)
+      .withMaxOpenRequests(32)
+      .withMaxRetries(3)
+
+    val pool = Http().superPool[String]()(materializer).log(":pool")
+    val auth = Authorization(BasicHttpCredentials(systemConfig.credentials))
+
+    val download = Flow[String]
+      .map(url => HttpRequest(method = HttpMethods.GET, uri = Uri(url: uri.Uri), headers = List(auth)) -> url)
+      .via(pool)
+      .mapAsyncUnordered(8) {
+        case (Success(response: HttpResponse), url) => extractResponse(response, url)
+      }
+
+    val filterAndCache = Flow[String]
+      .filter(url => notVisited(url) && acceptablePath(url) )
+      .map(updateCache)
+      .log(":filter")
+
+    val extractLinks = Flow[(String, String)]
+      .mapConcat{ case (text, url) => getUrls(parse(text, url)) }
+
+    val index = Flow[(String, String)]
+      .to(Sink.foreach[(String, String)]{ case (text, url) => index0.update(text, url) })
 
     val g = RunnableGraph.fromGraph(GraphDSL.create(in, urlsSink)((_, _)) { implicit b =>
       (in, urlsSink0) =>
         import GraphDSL.Implicits._
-
-
-        val pool = Http().superPool[String]()(materializer).log(":pool")
-
-        val auth = Authorization(BasicHttpCredentials(systemConfig.credentials))
-
-        val download = Flow[String]
-          .map(url => HttpRequest(method = HttpMethods.GET, uri = Uri(url:uri.Uri), headers = List(auth)) -> url)
-          .via(pool)
-          .mapAsyncUnordered(8) {
-            case (Success(response: HttpResponse), url) => extractResponse(response, url)
-          }
-
-        val filterAndCache = Flow[String]
-          .filter(url => notVisited(url) && acceptablePath(url) )
-          .map(updateCache)
-          .log(":filter")
-
-        val extractLinks = Flow[(String, String)]
-          .mapConcat{ case (text, url) => getUrls(parse(text, url)) }
-
-        val index = Flow[(String, String)]
-          .to(Sink.foreach[(String, String)]{ case (text, url) => index0.update(text, url) })
 
         val bcast = b.add(Broadcast[(String, String)](3))
 
@@ -170,6 +168,38 @@ object Crawler {
 
   private def queueSource(queueName: String, queueDeclaration: QueueDeclaration): Source[String, NotUsed] = {
     val settings: AmqpSourceSettings = NamedQueueSourceSettings(connectionDetails, queueName).withDeclarations(queueDeclaration)
-    AmqpSource(settings, bufferSize = 100).map(_.bytes.utf8String).log(":in")
+    AmqpSource(settings, bufferSize = 100).map(_.bytes.utf8String)
   }
 }
+
+object broker {
+  def main(args: Array[String]): Unit = {
+    startBroker()
+  }
+}
+
+
+
+//
+//val count = new AtomicInteger(0)
+//
+//val index = Flow[(String, String)]
+//.mapConcat{ case (text, url) =>
+//index0.update(text, url)
+//List.fill(2)(url.concat(count.incrementAndGet().toString))
+//}.log(":index")
+//
+//val downloadReal = Flow[String].via(download)
+//
+//val function = Flow[String].via(filterAndCache)
+//.via(downloadReal)
+////      .mapAsyncUnordered(2){case (text, url) =>
+////        index0.update(text, url)
+////        Future(url)
+////      }
+//.mapConcat{ case (text, url) =>
+//index0.update(text, url)
+//List.fill(2)(url.concat(count.incrementAndGet().toString))
+//}
+//
+//in.via(function).runWith(urlsSink)

@@ -2,20 +2,21 @@ package voli.index
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
+import java.util
 
-import com.wantedtech.common.xpresso.x
+import com.rklaehn.radixtree.RadixTree
 import org.jsoup.nodes.Document
 
 import scala.collection.JavaConverters._
-import scala.collection.immutable.Set
 import scala.util.Properties
 
 class Index(indexDir: String = "blocks") {
-  type Index = Map[Term, (Frequency, Set[Postings])]
+    type Occurrences = RadixTree[Postings, Frequency]
+    type Index = util.Map[Term, Occurrences]
 
   Files.createDirectories(systemConfig.indexDir)
 
-  private var tempIndex: Index = Map()
+  private var tempIndex: Index = new util.HashMap[Term, Occurrences](10000)
   private var blockNo = 0
 
   def sameTerm(p1: Option[(Line, Any)], p2: Option[(Line, Any)]): Boolean = (p1, p2) match {
@@ -23,35 +24,35 @@ class Index(indexDir: String = "blocks") {
     case _ => false
   }
 
+  private val emptyTree: Occurrences = RadixTree.empty
+
   def documentIndex(document: String, location: String): Index = {
-    val text = /*if (document.contains("<html>")) Jsoup.parse(document).text() else*/ document
-    val tokens = for {
-      token<- text.split("[\\p{Z}\\s]+")
-      sentence <- x.String.EN.tokenize(token).asScala
-      word <- sentence.getWords.toArrayList.asScala if !systemConfig.excludedTokens.contains(word)
-    } yield word.toLowerCase
-
-    tokens.groupBy(token => token)
-      .map { case (term, terms) => term -> (terms.size, Set(location)) }
-  }
-
-  def mergeIndices(i1: Index, i2: Index): Index = {
-    val combined = i1.toSeq ++ i2.toSeq
-    val grouped: Map[Term, Seq[(Term, (Frequency, Set[String]))]] = combined.groupBy(_._1)
-    val emptyListing = (0, Set.empty[String])
-    grouped.mapValues(
-      _.map(_._2).foldLeft(emptyListing) {
-        case ((lFreq, lDocs), (rFreq, rDocs)) => (lFreq + rFreq, lDocs ++ rDocs)
-      })
+    val map: Index = new util.HashMap(10000)
+    tokenize(document).foldLeft(map)
+    {(m, token) =>
+      val maybeOccurrences = m.getOrDefault(token, emptyTree)
+      val occs = RadixTree.singleton(location, 1)
+      val merged = maybeOccurrences.mergeWith(occs, _ + _)
+      m.put(token, merged)
+      m
+    }
   }
 
   def update(document: Document): Unit = update(document.text(), document.location())
 
   def update(document: String, url: String): Unit = {
-    val index = documentIndex(document, url)
-    tempIndex = mergeIndices(tempIndex, index)
+    val docIndex = documentIndex(document, url)
+    val entries = docIndex.entrySet()
+    val it = entries.iterator()
+    while (it.hasNext) {
+      val entry = it.next()
+      val key: Term = entry.getKey
+      val indexedOcc: Occurrences = tempIndex.getOrDefault(key, emptyTree)
+      val updatedOcc: Occurrences = indexedOcc.mergeWith(entry.getValue, _ + _)
+      tempIndex.put(key, updatedOcc)
+    }
 
-    if (hitMemoryLimit(tempIndex.toList)) flush()
+    if (tempIndex.size() > 100000) flush()
   }
 
   def flush(): Unit = {
@@ -60,14 +61,40 @@ class Index(indexDir: String = "blocks") {
     Files.createFile(blockFile)
     val out = Files.newBufferedWriter(blockFile, StandardCharsets.UTF_8)
 
-    tempIndex.toSeq.sortBy{ case (term, (_, _)) => term}.foreach{
-      case (term, (freq, documents)) =>
-        val line = Line(term, freq, documents.mkString(",")).toString + Properties.lineSeparator
-        out.write(line)
-    }
+    tempIndex.entrySet().asScala.toList
+      .sortBy(_.getKey)
+      .foreach {
+        entry =>
+          val freq = entry.getValue.values.sum
+          val postings = entry.getValue.keys.mkString(",")
+          val line = Line(entry.getKey, freq, postings).toString + Properties.lineSeparator
+          out.write(line)
+      }
 
     out.close()
-    tempIndex = Map()
+    tempIndex = new util.HashMap(10000)
+  }
+
+  private val nbsp: Char = 0x00A0
+  private val sp: Char = 0x0020
+  private val nl: Char = 0xA
+  private val cr: Char = 0xD
+
+  def tokenize(s: String): List[String] =  {
+    var strings = List[String]()
+    var index = 0
+    val chars = s.toCharArray
+    var i = 0
+    while (i < chars.length) {
+      val ch = chars(i)
+      if (ch == sp || ch == nbsp || ch == nl || ch == cr) {
+        strings = s.substring(index, i) :: strings
+        index = i + 1
+      }
+      i += 1
+    }
+
+    s.substring(index, chars.length) :: strings
   }
 }
 

@@ -11,6 +11,7 @@ import akka.stream.scaladsl.{Flow, Source}
 import kamon.Kamon
 import org.aeonbits.owner.Config._
 import org.aeonbits.owner.{Config, ConfigFactory, Converter}
+import org.apache.qpid.server.{Broker, BrokerOptions}
 import voli.index.mergeBlocks
 
 import scala.collection.JavaConverters._
@@ -182,6 +183,20 @@ package object index {
       x
     }
   }
+
+  def startBroker(): Unit = {
+    val broker = new Broker()
+    val brokerOptions = new BrokerOptions()
+
+    val configFileName = "/qpid-config.json"
+
+    brokerOptions.setConfigProperty("broker.name", "embedded-broker")
+    brokerOptions.setConfigProperty("qpid.amqp_port", "5672")
+    brokerOptions.setConfigProperty("qpid.work_dir", com.google.common.io.Files.createTempDir().getAbsolutePath)
+    brokerOptions.setInitialConfigurationLocation(getClass.getResource(configFileName).toString)
+    broker.startup(brokerOptions)
+  }
+
 }
 
 object test {

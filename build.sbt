@@ -6,6 +6,7 @@ scalaVersion := "2.12.1"
 
 val akkaVersion = "2.5.1"
 val kamonVersion = "0.6.7"
+val jmhVersion = "1.19"
 
 resolvers += Resolver.bintrayRepo("cakesolutions", "maven")
 
@@ -28,9 +29,16 @@ libraryDependencies ++= Seq(
   "com.rklaehn" %% "radixtree" % "0.5.0",
   "commons-io" % "commons-io" % "2.4",
   "io.lemonlabs" %% "scala-uri" % "0.4.16",
+  "com.google.guava" % "guava" % "22.0",
+  "org.apache.commons" % "commons-lang3" % "3.0",
   "io.kamon" %% "kamon-core" % kamonVersion,
   "io.kamon" %% "kamon-statsd" % kamonVersion,
-  "org.scalatest" %% "scalatest" % "3.0.1" % "test"
+  "org.scalatest" %% "scalatest" % "3.0.1" % "test",
+  "com.github.ben-manes.caffeine" % "caffeine" % "2.5.2",
+  "org.openjdk.jmh" % "jmh-core" % jmhVersion,
+  "org.openjdk.jmh" % "jmh-generator-annprocess" % jmhVersion
+
+
 )
 
 aspectjSettings
@@ -38,4 +46,3 @@ javaOptions in run <++= AspectjKeys.weaverOptions in Aspectj
 fork in run := true
 connectInput in run := true
 
-    
