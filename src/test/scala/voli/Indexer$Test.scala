@@ -6,7 +6,7 @@ import org.jsoup.Jsoup
 import org.scalatest.FlatSpec
 import voli.index.Index
 
-class Indexer$Test extends FlatSpec with TestIO{
+class Indexer$Test extends FlatSpec with TestIO {
   private val docString = io.Source.fromURI(testDirPath.resolve("test.html").toUri).getLines().mkString("\n")
 
   "Merge blocks" should "combine and output to file in sorted order" in {

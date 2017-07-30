@@ -4,6 +4,7 @@ import org.jsoup.Jsoup
 import org.scalatest.FlatSpec
 import voli.index.Index
 
+import scala.collection.JavaConverters.iterableAsScalaIterableConverter
 import scala.collection.mutable
 
 class IndexerSandbox extends FlatSpec {
@@ -20,9 +21,9 @@ class IndexerSandbox extends FlatSpec {
   it should "match index sorting and priority queue order" in {
     val document = Jsoup.parse(docString)
     val idx = new Index().documentIndex(document.text(), document.location())
-    val sortedterms = idx.toSeq.sortBy(_._1).map(_._1)
-    val keys: Iterable[String] = idx.keys
-    val queue = mutable.PriorityQueue[String](keys.toArray: _*)(Ordering.String.reverse)
+    val sortedterms = idx.entrySet().asScala.toList.sortBy(_.getKey).map(_.getKey)
+    val keys = idx.keySet()
+    val queue = mutable.PriorityQueue[String](keys.asScala.toArray: _*)(Ordering.String.reverse)
 
     sortedterms.foreach( term => assert(term == queue.dequeue()))
   }
