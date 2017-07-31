@@ -132,7 +132,7 @@ object Crawler {
       .mapConcat{ case (text, url) => getUrls(parse(text, url)) }
 
     val index = Flow[(String, String)]
-      .to(Sink.foreach[(String, String)]{ case (text, url) => index0.update(text, url) })
+      .to(Sink.foreach{ case (text, url) => index0.update(text, url) })
 
     val g = RunnableGraph.fromGraph(GraphDSL.create(in, urlsSink)((_, _)) { implicit b =>
       (in, urlsSink0) =>

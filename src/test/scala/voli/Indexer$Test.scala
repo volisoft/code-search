@@ -16,7 +16,9 @@ class Indexer$Test extends FlatSpec with TestIO {
   }
 
   it should "create dictionary" in {
-    val idx = new Index(indexDir = s"$testDirStringPath/out/indexTest1")
+    val idx = new Index()
+    //todo initialize index with test dir
+    s"$testDirStringPath/out/indexTest1"
     idx.update(Jsoup.parse(docString))
   }
 

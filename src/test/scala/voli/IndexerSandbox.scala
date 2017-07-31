@@ -13,7 +13,8 @@ class IndexerSandbox extends FlatSpec {
 
   "Index" should "produce lowercase terms" in {
     val document = Jsoup.parse(docString)
-    val indexer = new Index("delete_me_1")
+    val indexer = new Index()
+    //todo init index with "delete_me_1" directory
     indexer.update(document)
     io.Source.fromURL(getClass.getResource("/delete_me_1"))
   }

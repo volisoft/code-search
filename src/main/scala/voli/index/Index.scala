@@ -10,26 +10,27 @@ import org.jsoup.nodes.Document
 import scala.collection.JavaConverters._
 import scala.util.Properties
 
-class Index(indexDir: String = "blocks") {
-    type Occurrences = RadixTree[Postings, Frequency]
-    type Index = util.Map[Term, Occurrences]
+class Index {
+  type Occurrences = RadixTree[Postings, Frequency]
+  type Index = util.Map[Term, Occurrences]
 
   Files.createDirectories(systemConfig.indexDir)
 
-  private var tempIndex: Index = new util.HashMap[Term, Occurrences](10000)
-  private var blockNo = 0
+  private var tempIndex: Index = newIndex()
+
+  private def newIndex(): Index = new util.HashMap[Term, Occurrences](10000)
+
+  private val emptyTree: Occurrences = RadixTree.empty
 
   def sameTerm(p1: Option[(Line, Any)], p2: Option[(Line, Any)]): Boolean = (p1, p2) match {
     case (Some((l1, _)), Some((l2, _))) => l1.term == l2.term
     case _ => false
   }
 
-  private val emptyTree: Occurrences = RadixTree.empty
-
   def documentIndex(document: String, location: String): Index = {
     val map: Index = new util.HashMap(10000)
     tokenize(document).foldLeft(map)
-    {(m, token) =>
+    { (m, token) =>
       val maybeOccurrences = m.getOrDefault(token, emptyTree)
       val occs = RadixTree.singleton(location, 1)
       val merged = maybeOccurrences.mergeWith(occs, _ + _)
@@ -52,14 +53,12 @@ class Index(indexDir: String = "blocks") {
       tempIndex.put(key, updatedOcc)
     }
 
-    if (tempIndex.size() > 100000) flush()
+    if (tempIndex.size() > 40000) flush()
   }
 
   def flush(): Unit = {
-    blockNo += 1
-    val blockFile = Paths.get(s"$indexDir/block$blockNo.txt")
-    Files.createFile(blockFile)
-    val out = Files.newBufferedWriter(blockFile, StandardCharsets.UTF_8)
+    val tmpFile = Files.createTempFile(systemConfig.indexDir, "", ".idx")
+    val out = Files.newBufferedWriter(tmpFile, StandardCharsets.UTF_8)
 
     tempIndex.entrySet().asScala.toList
       .sortBy(_.getKey)
@@ -72,7 +71,7 @@ class Index(indexDir: String = "blocks") {
       }
 
     out.close()
-    tempIndex = new util.HashMap(10000)
+    tempIndex = newIndex()
   }
 
   private val nbsp: Char = 0x00A0

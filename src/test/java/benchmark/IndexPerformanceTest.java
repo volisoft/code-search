@@ -65,8 +65,8 @@ public class IndexPerformanceTest implements TestIO {
         }
 
         static final String html_file = testString();
-        static Index mi = new Index("");
-        static IndexRadix ri = new IndexRadix("");
+        static Index mi = new Index();
+        static IndexRadix ri = new IndexRadix();
 
         @Benchmark
         @Warmup(iterations = 10, time = 3, timeUnit = TimeUnit.SECONDS)

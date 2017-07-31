@@ -107,7 +107,7 @@ package object index {
 
   def blockFiles(): Seq[File] = {
     val dir = systemConfig.indexDir
-    val filter = dir.getFileSystem.getPathMatcher("glob:**/block*")
+    val filter = dir.getFileSystem.getPathMatcher("glob:**/.idx*")
     if (Files.exists(dir) && Files.isDirectory(dir)){
       Files.list(dir)
         .filter(filter.matches(_))
